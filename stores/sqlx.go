@@ -17,7 +17,6 @@ import (
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
 	"log/slog"
-	"time"
 )
 
 const TABLE_NAME = "go_jobs"
@@ -36,7 +35,7 @@ type MysqlConfig struct {
 type Jobs struct {
 	ID          string  `db:"job_id"`
 	NextTime    float64 `db:"next_run_time"`
-	NextRunTime time.Time
+	NextRunTime int64
 	State       []byte `db:"state"`
 }
 
@@ -87,7 +86,7 @@ func (s *MysqlStore) AddJob(j job.Job) error {
 
 	params := map[string]any{
 		"job_id":        j.Id,
-		"next_run_time": j.NextRunTime.UTC().Unix(),
+		"next_run_time": j.NextRunTime,
 		"state":         state,
 	}
 
@@ -133,12 +132,12 @@ func (s *MysqlStore) GetAllJobs() ([]job.Job, error) {
 	return jobList, nil
 }
 
-func (s *MysqlStore) GetDueJobs(now time.Time) ([]job.Job, error) {
+func (s *MysqlStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 	var jsList []*Jobs
 
 	querySql := "select job_id, next_run_time, state from `%s` where next_run_time <= :next_run_time"
 
-	q, args := s.sqlPares(fmt.Sprintf(querySql, s.TableName), map[string]any{"next_run_time": now.UTC().Unix()})
+	q, args := s.sqlPares(fmt.Sprintf(querySql, s.TableName), map[string]any{"next_run_time": timestamp})
 	err := s.DB.Select(&jsList, q, args...)
 	if err != nil {
 		return nil, err
@@ -164,7 +163,7 @@ func (s *MysqlStore) UpdateJob(j job.Job) error {
 	updateSql := "update `%s` set next_run_time=:next_run_time, state=:state where job_id=:job_id"
 	params := map[string]any{
 		"job_id":        j.Id,
-		"next_run_time": j.NextRunTime.UTC().Unix(),
+		"next_run_time": j.NextRunTime,
 		"state":         state,
 	}
 	_, err = s.DB.NamedExec(fmt.Sprintf(updateSql, s.TableName), params)
@@ -184,20 +183,20 @@ func (s *MysqlStore) DeleteAllJobs() error {
 	return err
 }
 
-func (s *MysqlStore) GetNextRunTime() (time.Time, error) {
+func (s *MysqlStore) GetNextRunTime() (int64, error) {
 	var nextRunTimeMini float64
 	querySql := "select next_run_time from `%s` order by next_run_time asc limit 1"
 	err := s.DB.Get(&nextRunTimeMini, fmt.Sprintf(querySql, s.TableName))
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return time.Time{}, nil
+			return 0, nil
 		} else {
-			return time.Time{}, err
+			return 0, err
 		}
 	}
 
-	return time.Unix(int64(nextRunTimeMini), 0), nil
+	return int64(nextRunTimeMini), nil
 }
 
 func (s *MysqlStore) Clear() error {

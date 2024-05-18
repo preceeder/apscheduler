@@ -8,7 +8,6 @@ import (
 	"github.com/preceeder/apscheduler/job"
 	"github.com/redis/go-redis/v9"
 	"strconv"
-	"time"
 )
 
 const (
@@ -82,7 +81,7 @@ func (s *RedisStore) AddJob(j job.Job) error {
 
 	_, err = s.RDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HSet(ctx, s.JobsKey, j.Id, state)
-		pipe.ZAdd(ctx, s.RunTimesKey, redis.Z{Score: float64(j.NextRunTime.UTC().Unix()), Member: j.Id})
+		pipe.ZAdd(ctx, s.RunTimesKey, redis.Z{Score: float64(j.NextRunTime), Member: j.Id})
 		return nil
 	})
 	if err != nil {
@@ -123,11 +122,11 @@ func (s *RedisStore) GetAllJobs() ([]job.Job, error) {
 }
 
 // GetDueJobs 还需要测试
-func (s *RedisStore) GetDueJobs(now time.Time) ([]job.Job, error) {
+func (s *RedisStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 	var jobList []job.Job
 
 	Min := "-inf"
-	Max := strconv.FormatInt(now.UTC().Unix(), 10)
+	Max := strconv.FormatInt(timestamp, 10)
 	jobIds, err := s.RDB.ZRangeByScore(ctx, s.RunTimesKey, &redis.ZRangeBy{Min: Min, Max: Max}).Result()
 	if err != nil {
 		return jobList, err
@@ -159,7 +158,7 @@ func (s *RedisStore) UpdateJob(j job.Job) error {
 
 	_, err = s.RDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
 		pipe.HSet(ctx, s.JobsKey, j.Id, state)
-		pipe.ZAdd(ctx, s.RunTimesKey, redis.Z{Score: float64(j.NextRunTime.UTC().Unix()), Member: j.Id})
+		pipe.ZAdd(ctx, s.RunTimesKey, redis.Z{Score: float64(j.NextRunTime), Member: j.Id})
 		return nil
 	})
 	if err != nil {
@@ -195,13 +194,13 @@ func (s *RedisStore) DeleteAllJobs() error {
 	return nil
 }
 
-func (s *RedisStore) GetNextRunTime() (time.Time, error) {
+func (s *RedisStore) GetNextRunTime() (int64, error) {
 	sliceRunTimes, err := s.RDB.ZRangeWithScores(ctx, s.RunTimesKey, 0, 0).Result()
 	if err != nil || len(sliceRunTimes) == 0 {
-		return time.Time{}, nil
+		return 0, nil
 	}
 
-	nextRunTimeMin := time.Unix(int64(sliceRunTimes[0].Score), 0).UTC()
+	nextRunTimeMin := int64(sliceRunTimes[0].Score)
 	return nextRunTimeMin, nil
 }
 

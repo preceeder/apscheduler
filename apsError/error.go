@@ -37,3 +37,11 @@ type JobTimeoutError struct {
 func (e *JobTimeoutError) Error() string {
 	return fmt.Sprintf("job `%s` Timeout `%s` error: %s!", e.FullName, e.Timeout, e.Err)
 }
+
+type JobExistsError string
+
+func (e JobExistsError) Error() string { return fmt.Sprintf("job exists: `%s`", string(e)) }
+
+type JobIdError string
+
+func (e JobIdError) Error() string { return fmt.Sprintf("job Id `%s`", string(e)) }

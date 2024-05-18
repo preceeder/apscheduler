@@ -10,7 +10,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"time"
 )
 
 const (
@@ -58,7 +57,7 @@ func (s *MongoDBStore) AddJob(j job.Job) error {
 	_, err = s.coll.InsertOne(ctx,
 		bson.M{
 			"_id":           j.Id,
-			"next_run_time": j.NextRunTime.UTC().Unix(),
+			"next_run_time": j.NextRunTime,
 			"state":         state,
 		},
 	)
@@ -104,10 +103,10 @@ func (s *MongoDBStore) GetAllJobs() ([]job.Job, error) {
 	return jobList, nil
 }
 
-func (s *MongoDBStore) GetDueJobs(now time.Time) ([]job.Job, error) {
+func (s *MongoDBStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 	var jobList []job.Job
 
-	filter := bson.M{"next_run_time": bson.M{"$lte": now.UTC().Unix()}}
+	filter := bson.M{"next_run_time": bson.M{"$lte": timestamp}}
 	cursor, err := s.coll.Find(ctx, filter)
 	if err != nil {
 		return nil, err
@@ -140,7 +139,7 @@ func (s *MongoDBStore) UpdateJob(j job.Job) error {
 	err = s.coll.FindOneAndReplace(ctx,
 		bson.M{"_id": j.Id},
 		bson.M{
-			"next_run_time": j.NextRunTime.UTC().Unix(),
+			"next_run_time": j.NextRunTime,
 			"state":         state,
 		},
 	).Decode(&result)
@@ -158,18 +157,18 @@ func (s *MongoDBStore) DeleteAllJobs() error {
 	return err
 }
 
-func (s *MongoDBStore) GetNextRunTime() (time.Time, error) {
+func (s *MongoDBStore) GetNextRunTime() (int64, error) {
 	var result bson.M
 	opts := options.FindOne().SetSort(bson.M{"next_run_time": 1})
 	err := s.coll.FindOne(ctx, bson.M{}, opts).Decode(&result)
 	if err != nil {
-		return time.Time{}, err
+		return 0, err
 	}
 	if err == mongo.ErrNoDocuments {
-		return time.Time{}, nil
+		return 0, nil
 	}
 
-	nextRunTimeMin := time.Unix(result["next_run_time"].(int64), 0).UTC()
+	nextRunTimeMin := result["next_run_time"].(int64)
 	return nextRunTimeMin, nil
 }
 

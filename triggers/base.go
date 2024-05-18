@@ -21,7 +21,8 @@ const (
 
 type Trigger interface {
 	Init() error
-	GetNextRunTime(previousFireTime, now time.Time) (time.Time, error)
+	GetExpireTime() int64
+	GetNextRunTime(previousFireTime, now int64) (int64, error)
 }
 
 func init() {

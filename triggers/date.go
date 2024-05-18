@@ -9,8 +9,10 @@ package triggers
 import "time"
 
 type DateTrigger struct {
-	RunDate      time.Time `json:"run_date"`
-	TimeZoneName string    `json:"time_zone_name"`
+	RunDate      string `json:"run_date"`
+	TimeZoneName string `json:"time_zone_name"`
+	ExpireTime   int64  `json:"expire_time"` // 任务超过多长时间就是过期, 过期则本次不执行 单位 time.Second, 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
+	runDate      int64
 	timeZone     *time.Location
 	isInit       bool
 }
@@ -28,20 +30,35 @@ func (dt *DateTrigger) Init() error {
 	if err != nil {
 		return err
 	}
+
+	rt, err := time.ParseInLocation(dt.RunDate, time.DateTime, dt.timeZone)
+	if err != nil {
+		return err
+	}
+
+	dt.runDate = rt.UTC().Unix()
+
+	if dt.ExpireTime == 0 {
+		dt.ExpireTime = 1
+	}
 	return nil
 }
 
-func (dt *DateTrigger) GetNextRunTime(previousFireTime, now time.Time) (time.Time, error) {
+func (dt *DateTrigger) GetExpireTime() int64 {
+	return dt.ExpireTime
+}
+
+func (dt *DateTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
 	if !dt.isInit {
 		if err := dt.Init(); err != nil {
-			return time.Time{}, err
+			return 0, err
 		}
 	}
-	if previousFireTime.IsZero() {
-		if dt.RunDate.Before(now) {
-			return time.Time{}, nil
+	if previousFireTime == 0 {
+		if dt.runDate <= now {
+			return 0, nil
 		}
-		return dt.RunDate.In(dt.timeZone), nil
+		return dt.runDate, nil
 	}
-	return time.Time{}, nil
+	return 0, nil
 }

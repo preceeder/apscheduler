@@ -6,7 +6,6 @@ import (
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
 	"sort"
-	"time"
 )
 
 // Stores jobs in an array in RAM. Provides no persistence support.
@@ -33,10 +32,10 @@ func (s *MemoryStore) GetJob(id string) (job.Job, error) {
 	return job.Job{}, apsError.JobNotFoundError(id)
 }
 
-func (s *MemoryStore) GetDueJobs(now time.Time) ([]job.Job, error) {
+func (s *MemoryStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 	var dueIndex = -1
 	for i, sj := range s.jobs {
-		if sj.NextRunTime.Before(now) {
+		if sj.NextRunTime < timestamp {
 			dueIndex = i
 		}
 	}
@@ -76,9 +75,9 @@ func (s *MemoryStore) DeleteAllJobs() error {
 	return nil
 }
 
-func (s *MemoryStore) GetNextRunTime() (time.Time, error) {
+func (s *MemoryStore) GetNextRunTime() (int64, error) {
 	if len(s.jobs) == 0 {
-		return time.Time{}, nil
+		return 0, nil
 	}
 	return s.jobs[0].NextRunTime, nil
 }

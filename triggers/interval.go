@@ -15,12 +15,12 @@ import (
 type IntervalTrigger struct {
 	StartTime    string `json:"start_time"` // time.DateTime
 	EndTime      string `json:"end_time"`   // time.DateTime
-	Interval     string `json:"interval"`
+	Interval     int64  `json:"interval"`   // 单位秒
 	TimeZoneName string `json:"time_zone_name"`
+	ExpireTime   int64  `json:"expire_time"` // 任务超过多长时间就是过期, 过期则本次不执行 单位 time.Second, 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
 	timeZone     *time.Location
-	startTime    time.Time
-	endTime      time.Time
-	interval     time.Duration
+	startTime    int64
+	endTime      int64
 	isInit       bool
 }
 
@@ -40,62 +40,65 @@ func (it *IntervalTrigger) Init() error {
 		return err
 	}
 
-	it.interval, err = it.GetInterval()
 	if err != nil {
 		return err
 	}
-
+	now := time.Now()
 	if it.StartTime == "" {
-		it.startTime = time.Now().UTC()
+		it.startTime = now.UTC().Unix()
+		it.StartTime = now.In(it.timeZone).Format(time.DateTime)
 	} else {
-		it.startTime, err = time.ParseInLocation(time.DateTime, it.StartTime, it.timeZone)
+		sTime, err := time.ParseInLocation(time.DateTime, it.StartTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" StartTime `%s` TimeZone: %s error: %s", it.StartTime, it.TimeZoneName, err)
 		}
+		it.startTime = sTime.UTC().Unix()
 	}
 
 	if it.EndTime == "" {
-		it.endTime = MaxDate.UTC()
+		it.endTime = MaxDate.UTC().Unix()
 	} else {
-		it.endTime, err = time.ParseInLocation(time.DateTime, it.EndTime, it.timeZone)
+		eTime, err := time.ParseInLocation(time.DateTime, it.EndTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" EndTime `%s` TimeZone: %s error: %s", it.EndTime, it.TimeZoneName, err)
 		}
+		it.endTime = eTime.UTC().Unix()
 	}
 	it.isInit = true
+
+	if it.ExpireTime == 0 {
+		it.ExpireTime = 1
+	}
 
 	return nil
 }
 
-func (it *IntervalTrigger) GetInterval() (time.Duration, error) {
-	i, err := time.ParseDuration(it.Interval)
-	if err != nil {
-		return 0, fmt.Errorf("Interval `%s` error: %s", it.Interval, err)
-	}
-	return i, nil
+func (it *IntervalTrigger) GetExpireTime() int64 {
+	return it.ExpireTime
 }
 
-func (it *IntervalTrigger) GetNextRunTime(previousFireTime, now time.Time) (time.Time, error) {
-	var nextRunTime time.Time
+func (it *IntervalTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
+	var nextRunTime int64
 	if !it.isInit {
 		if err := it.Init(); err != nil {
-			return time.Time{}, err
+			return 0, err
 		}
 	}
-	if !previousFireTime.IsZero() {
-		if !previousFireTime.Before(now) {
+	if previousFireTime > 0 {
+		if previousFireTime > now {
 			return previousFireTime, nil
 		}
-		nextRunTime = previousFireTime.Add(it.interval)
-	} else if it.startTime.Sub(now) > 0 {
+		nextRunTime = previousFireTime + it.Interval
+	} else if it.startTime > now {
 		nextRunTime = it.startTime
 	} else {
-		timediffDuration := now.Sub(it.startTime)
-		nextIntervalNum := time.Duration(math.Ceil(float64(timediffDuration / it.interval)))
-		nextRunTime = it.startTime.Add(it.interval * nextIntervalNum)
+		timediffDuration := now - it.startTime
+		nextIntervalNum := int64(math.Ceil(float64(timediffDuration / it.Interval)))
+		nextRunTime = it.startTime + (it.Interval * nextIntervalNum)
 	}
-	if it.endTime.Before(nextRunTime) {
-		return time.Time{}, nil
+
+	if it.endTime < nextRunTime {
+		return 0, nil
 	}
 	return nextRunTime, nil
 }

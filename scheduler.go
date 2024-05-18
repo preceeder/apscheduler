@@ -81,36 +81,79 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
 
+	if j.Id == "" {
+		return j, apsError.JobIdError("can not is \"\"")
+	}
 	if err := j.Init(); err != nil {
 		return job.Job{}, err
 	}
 
-	slog.Info(fmt.Sprintf("Scheduler add job `%s`.\n", j.Name))
-	var store stores.Store
-	store, err := s.getStore(j.StoreName)
-	if err != nil {
-		return job.Job{}, err
-	}
-
-	_, err = store.GetJob(j.Id)
-	if err != nil {
-		if errors.As(err, &apsError.JobNotFoundErrorType) {
-			if err := store.AddJob(j); err != nil {
-				return job.Job{}, err
+	slog.Info(fmt.Sprintf("Scheduler add job `%s`.", j.Name))
+	// 要查询一下 所有的 村处理里有没有一样的任务id
+	var jobExists bool
+	// 检查任务是否已存在
+	for k, st := range s.store {
+		_, err := st.GetJob(j.Id)
+		if err != nil {
+			if errors.As(err, &apsError.JobNotFoundErrorType) {
+				continue
+			} else {
+				return j, err
 			}
-			slog.Info("add job", "job", j)
-		} else {
-			return j, err
 		}
-	} else {
-		// 存在 且 更新
+
+		if k != j.StoreName {
+			return j, apsError.JobExistsError(fmt.Sprintf("%s exists other store:%s", j.Id, k))
+		} else {
+			jobExists = true
+		}
+	}
+	//store, err := s.getStore(j.StoreName)
+	//if err != nil {
+	//	return job.Job{}, err
+	//}
+	//
+	//_, err = store.GetJob(j.Id)
+	if jobExists {
+		// 存在且  任务可以更新
 		if j.Replace {
 			js, err := s._updateJob(j)
 			if err != nil {
 				return js, err
 			}
+			slog.Info("add job to update", "job", j)
+
+		} else {
+			return j, apsError.JobExistsError(fmt.Sprintf("%s exists %s, can't update", j.Id, j.StoreName))
 		}
+	} else {
+		store, err := s.getStore(j.StoreName)
+		if err != nil {
+			return j, err
+		}
+		if err := store.AddJob(j); err != nil {
+			return j, err
+		}
+		slog.Info("add job", "job", j)
 	}
+	//if err != nil {
+	//	if errors.As(err, &apsError.JobNotFoundErrorType) {
+	//		if err := store.AddJob(j); err != nil {
+	//			return job.Job{}, err
+	//		}
+	//		slog.Info("add job", "job", j)
+	//	} else {
+	//		return j, err
+	//	}
+	//} else {
+	//	// 存在 且 更新
+	//	if j.Replace {
+	//		js, err := s._updateJob(j)
+	//		if err != nil {
+	//			return js, err
+	//		}
+	//	}
+	//}
 
 	if s.isRunning {
 		s.jobChangeChan <- struct{}{}
@@ -237,7 +280,8 @@ func (s *Scheduler) PauseJob(id string, storeName string) (job.Job, error) {
 	}
 
 	j.Status = job.STATUS_PAUSED
-	j.NextRunTime, _ = j.Trigger.GetNextRunTime(time.Time{}, time.Now())
+	now := time.Now().UTC().Unix()
+	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j)
 	if err != nil {
 		return job.Job{}, err
@@ -258,7 +302,8 @@ func (s *Scheduler) ResumeJob(id string, storeName string) (job.Job, error) {
 	}
 
 	j.Status = job.STATUS_RUNNING
-	j.NextRunTime, _ = j.Trigger.GetNextRunTime(time.Time{}, time.Now())
+	now := time.Now().UTC().Unix()
+	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j)
 	if err != nil {
 		return job.Job{}, err
@@ -273,7 +318,7 @@ func (s *Scheduler) _runJob(j job.Job) {
 	if f.IsNil() {
 		slog.Warn(fmt.Sprintf("Job `%s` Func `%s` unregistered", j.Name, j.FuncName))
 	} else {
-		slog.Info(fmt.Sprintf("Job `%s` is running, next run time: `%s`", j.Name, j.NextRunTime.String()))
+		slog.Info(fmt.Sprintf("Job `%s` is running, next run time: `%d`", j.Name, j.NextRunTime))
 		go func() {
 			timeout, err := time.ParseDuration(j.Timeout)
 			if err != nil {
@@ -290,8 +335,8 @@ func (s *Scheduler) _runJob(j job.Job) {
 				defer close(ch)
 				defer func() {
 					if err := recover(); err != nil {
-						slog.Error(fmt.Sprintf("Job `%s` run error: %s\n", j.Name, err))
-						slog.Debug(fmt.Sprintf("%s\n", string(debug.Stack())))
+						slog.Error(fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
+						slog.Debug(fmt.Sprintf("%s", string(debug.Stack())))
 					}
 				}()
 
@@ -302,14 +347,14 @@ func (s *Scheduler) _runJob(j job.Job) {
 			case <-ch:
 				return
 			case <-ctx.Done():
-				slog.Warn(fmt.Sprintf("Job `%s` run timeout\n", j.Name))
+				slog.Warn(fmt.Sprintf("Job `%s` run timeout", j.Name))
 			}
 		}()
 	}
 }
 
 func (s *Scheduler) _flushJob(j job.Job) error {
-	if j.NextRunTime.IsZero() {
+	if j.NextRunTime == 0 {
 		if err := s._deleteJob(j.Id, j.StoreName); err != nil {
 			return fmt.Errorf("delete job `%s` error: %s", j.Name, err)
 		}
@@ -328,7 +373,7 @@ func (s *Scheduler) _scheduleJob(j job.Job) error {
 }
 
 func (s *Scheduler) RunJob(j job.Job) error {
-	slog.Info(fmt.Sprintf("Scheduler run job `%s`.\n", j.Name))
+	slog.Info(fmt.Sprintf("Scheduler run job `%s`.", j.Name))
 
 	s._runJob(j)
 
@@ -339,41 +384,42 @@ func (s *Scheduler) run() {
 	for {
 		select {
 		case <-s.quitChan:
-			slog.Info("Scheduler quit.\n")
+			slog.Info("Scheduler quit.")
 			return
 		case <-s.timer.C:
 			now := time.Now().UTC()
-
+			nowi := now.Unix()
 			//js, err := s.GetAllJobs()
-			js, err := s.GetDueJos(now)
+			js, err := s.GetDueJos(nowi)
 			if err != nil {
-				slog.Error(fmt.Sprintf("Scheduler get all jobs error: %s\n", err))
+				slog.Error(fmt.Sprintf("Scheduler get due jobs error: %s", err))
 				s.timer.Reset(time.Second)
 				continue
 			}
 
 			for _, j := range js {
-				if j.NextRunTime.Before(now) {
-					nextRunTime, isExpire, err := j.NextRunTimeHandler(now)
-					//nextRunTime, err := j.Trigger.GetNextRunTime(j.NextRunTime, time.Now())
+				if j.NextRunTime <= nowi {
+					nextRunTime, isExpire, err := j.NextRunTimeHandler(nowi)
 					if err != nil {
-						slog.Error(fmt.Sprintf("Scheduler calc next run time error: %s\n", err))
+						slog.Error(fmt.Sprintf("Scheduler calc next run time error: %s", err))
 						continue
 					}
+
 					j.NextRunTime = nextRunTime
 
 					if !isExpire {
 						err = s._scheduleJob(j)
 						if err != nil {
-							slog.Error(fmt.Sprintf("Scheduler schedule job `%s` error: %s\n", j.Name, err))
+							slog.Error(fmt.Sprintf("Scheduler schedule job `%s` error: %s", j.Name, err))
+							continue
 						}
 					} else {
-						slog.Info("job expire jump this exec", "jobId", j.Id)
+						slog.Info("job expire jump this exec", "jobId", j.Id, "next_run_time", nextRunTime)
 					}
 
 					err = s._flushJob(j)
 					if err != nil {
-						slog.Error(fmt.Sprintf("Scheduler %s\n", err))
+						slog.Error(fmt.Sprintf("Scheduler %s", err))
 						continue
 					}
 				} else {
@@ -385,7 +431,7 @@ func (s *Scheduler) run() {
 
 		case <-s.jobChangeChan:
 			nextWakeupInterval, _ := s.getNextWakeupInterval()
-			slog.Debug(fmt.Sprintf("Scheduler next wakeup interval %s\n", nextWakeupInterval))
+			slog.Info(fmt.Sprintf("Scheduler next wakeup interval %s", nextWakeupInterval))
 
 			s.timer.Reset(nextWakeupInterval)
 
@@ -393,15 +439,16 @@ func (s *Scheduler) run() {
 	}
 }
 
-func (s *Scheduler) GetDueJos(now time.Time) ([]job.Job, error) {
+func (s *Scheduler) GetDueJos(timestamp int64) ([]job.Job, error) {
 	jobs := make([]job.Job, 0)
 	var errs = make([]error, 0)
 	for _, store := range s.store {
-		js, err := store.GetDueJobs(now)
+		js, err := store.GetDueJobs(timestamp)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
+
 		jobs = append(jobs, js...)
 	}
 	return jobs, errors.Join(errs...)
@@ -412,7 +459,7 @@ func (s *Scheduler) Start() {
 	defer s.mutexS.Unlock()
 
 	if s.isRunning {
-		slog.Info("Scheduler is running.\n")
+		slog.Info("Scheduler is running.")
 		return
 	}
 
@@ -423,7 +470,7 @@ func (s *Scheduler) Start() {
 
 	go s.run()
 
-	slog.Info("Scheduler start.\n")
+	slog.Info("Scheduler start.")
 }
 
 func (s *Scheduler) Stop() {
@@ -431,41 +478,42 @@ func (s *Scheduler) Stop() {
 	defer s.mutexS.Unlock()
 
 	if !s.isRunning {
-		slog.Info("Scheduler has stopped.\n")
+		slog.Info("Scheduler has stopped.")
 		return
 	}
 
 	s.quitChan <- struct{}{}
 	s.isRunning = false
 
-	slog.Info("Scheduler stop.\n")
+	slog.Info("Scheduler stop.")
 }
 
 func (s *Scheduler) getNextWakeupInterval() (time.Duration, bool) {
-	var jobstore_next_run_time time.Time = time.Now().UTC()
+	var jobstore_next_run_time int64 = time.Now().UTC().UnixMilli()
 	var err error
-	next_wakeup_time := time.Now().UTC().Add(10000 * time.Second)
+	// 默认设置最大唤醒时间
+	next_wakeup_time := triggers.MaxDate.UTC().UnixMilli()
 	for _, store := range s.store {
 		jobstore_next_run_time, err = store.GetNextRunTime()
 		if err != nil {
-			slog.Error(fmt.Sprintf("Scheduler get next wakeup interval error: %s\n", err))
-			jobstore_next_run_time = time.Now().UTC().Add(1 * time.Second)
+			slog.Error(fmt.Sprintf("Scheduler get next wakeup interval error: %s", err))
+			jobstore_next_run_time = time.Now().UTC().Unix() + 1
 		}
-		if jobstore_next_run_time.Before(next_wakeup_time) {
+		jobstore_next_run_time = jobstore_next_run_time * 1000
+		if jobstore_next_run_time != 0 && jobstore_next_run_time < next_wakeup_time {
 			next_wakeup_time = jobstore_next_run_time
 		}
 	}
-	// 没有任务时 唤醒时间设置为最大
-	if next_wakeup_time.IsZero() {
-		next_wakeup_time = triggers.MaxDate
-	}
-	now := time.Now().UTC()
-	nextWakeupInterval := next_wakeup_time.Sub(now)
+
+	now := time.Now().UTC().UnixMilli()
+	nextWakeupInterval := next_wakeup_time - now
 	if nextWakeupInterval < 0 {
-		nextWakeupInterval = time.Second
-		return nextWakeupInterval, false
+		//nextWakeupInterval = time.Second
+		return 0, false
 	}
-	return nextWakeupInterval, true
+	//fmt.Println(nextWakeupInterval, time.Duration(nextWakeupInterval))
+
+	return time.Duration(nextWakeupInterval * 1000000), true
 }
 
 func (s *Scheduler) wakeup() {
