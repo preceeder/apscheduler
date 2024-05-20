@@ -1,5 +1,10 @@
-### 使用
+### Installation
+```go
+    go get -u github.com/preceeder/apscheduler
+```
 
+
+### Usage
 ```go
 package main
 
