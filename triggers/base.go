@@ -21,7 +21,7 @@ const (
 
 type Trigger interface {
 	Init() error
-	GetExpireTime() int64
+	GetJitterTime() int64
 	GetNextRunTime(previousFireTime, now int64) (int64, error)
 }
 

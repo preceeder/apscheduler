@@ -15,9 +15,9 @@ import (
 type CronTrigger struct {
 	CronExpr     string `json:"cron_expr"`
 	TimeZoneName string `json:"time_zone_name"` // 为空默认就是 UTC
-	StartTime    string `json:"start_time"`     // time.DateTime
-	EndTime      string `json:"end_time"`       // time.DateTime
-	ExpireTime   int64  `json:"expire_time"`    // 任务超过多长时间就是过期, 过期则本次不执行 单位 ms , 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
+	StartTime    string `json:"start_time"`     // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	EndTime      string `json:"end_time"`       // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 
 	startTime  int64
 	startTimet time.Time
@@ -66,15 +66,15 @@ func (ct *CronTrigger) Init() error {
 		ct.endTime = eTime.UnixMilli()
 	}
 
-	if ct.ExpireTime == 0 {
-		ct.ExpireTime = 1000 // 1000 ms
+	if ct.Jitter == 0 {
+		ct.Jitter = 1000 // 1000 ms
 	}
 
 	return nil
 }
 
-func (ct *CronTrigger) GetExpireTime() int64 {
-	return ct.ExpireTime
+func (ct *CronTrigger) GetJitterTime() int64 {
+	return ct.Jitter
 }
 
 // GetNextRunTime

@@ -13,15 +13,16 @@ import (
 )
 
 type IntervalTrigger struct {
-	StartTime    string `json:"start_time"` // time.DateTime
-	EndTime      string `json:"end_time"`   // time.DateTime
-	Interval     int64  `json:"interval"`   // 单位 ms
-	TimeZoneName string `json:"time_zone_name"`
-	ExpireTime   int64  `json:"expire_time"` // 任务超过多长时间就是过期, 过期则本次不执行 单位 time.Second, 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
+	StartTime    string `json:"start_time"`     // 数据格式 time.DateTime  "2006-01-02 15:04:05"
+	EndTime      string `json:"end_time"`       // 数据格式 time.DateTime  "2006-01-02 15:04:05"
+	Interval     int64  `json:"interval"`       // 单位 ms
+	TimeZoneName string `json:"time_zone_name"` // 默认UTC
+	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 	timeZone     *time.Location
 	startTime    int64
-	endTime      int64
-	isInit       bool
+
+	endTime int64
+	isInit  bool
 }
 
 // GetLocation 获取时区
@@ -66,15 +67,15 @@ func (it *IntervalTrigger) Init() error {
 	}
 	it.isInit = true
 
-	if it.ExpireTime == 0 {
-		it.ExpireTime = 1000
+	if it.Jitter == 0 {
+		it.Jitter = 1000
 	}
 
 	return nil
 }
 
-func (it *IntervalTrigger) GetExpireTime() int64 {
-	return it.ExpireTime
+func (it *IntervalTrigger) GetJitterTime() int64 {
+	return it.Jitter
 }
 
 // GetNextRunTime

@@ -87,11 +87,6 @@ func (j *Job) Check() error {
 		return apsError.FuncUnregisteredError(j.FuncName)
 	}
 
-	//_, err := time.ParseDuration(j.Timeout)
-	//if err != nil {
-	//	return &apsError.JobTimeoutError{FullName: j.Name, Timeout: j.Timeout, Err: err}
-	//}
-
 	return nil
 }
 
@@ -101,7 +96,7 @@ func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
 
 	var err error
 	var IsExpire bool
-	if nowi-nextRunTIme >= j.Trigger.GetExpireTime() {
+	if nowi-nextRunTIme >= j.Trigger.GetJitterTime() {
 		// 本次任务过期, 不执行
 		IsExpire = true
 	}

@@ -9,9 +9,9 @@ package triggers
 import "time"
 
 type DateTrigger struct {
-	RunDate      string `json:"run_date"`
-	TimeZoneName string `json:"time_zone_name"`
-	ExpireTime   int64  `json:"expire_time"` // 任务超过多长时间就是过期, 过期则本次不执行 单位 time.Second, 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
+	RunDate      string `json:"run_date"`       // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	TimeZoneName string `json:"time_zone_name"` // 默认UTC
+	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 	runDate      int64
 	timeZone     *time.Location
 	isInit       bool
@@ -38,14 +38,14 @@ func (dt *DateTrigger) Init() error {
 
 	dt.runDate = rt.UTC().UnixMilli()
 
-	if dt.ExpireTime == 0 {
-		dt.ExpireTime = 1000
+	if dt.Jitter == 0 {
+		dt.Jitter = 1000
 	}
 	return nil
 }
 
-func (dt *DateTrigger) GetExpireTime() int64 {
-	return dt.ExpireTime
+func (dt *DateTrigger) GetJitterTime() int64 {
+	return dt.Jitter
 }
 
 // GetNextRunTime
