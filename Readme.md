@@ -73,7 +73,7 @@ func main(){
 		FuncName: "printJob",
 		Trigger: &triggers.IntervalTrigger{
 			Interval: 5 * 1000,  // 3s
-			TimeZoneName: time.Local.String(),
+			TimeZoneName: "UTC+8",
 			EndTime: "2024-05-20 16:13:26",
 		},
 
