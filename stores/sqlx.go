@@ -75,6 +75,10 @@ func (s *MysqlStore) Init() error {
 	return nil
 }
 
+func (s *MysqlStore) Close() error {
+	return s.DB.Close()
+}
+
 func (s *MysqlStore) AddJob(j job.Job) error {
 	state, err := s.StateDump(j)
 	if err != nil {

@@ -14,10 +14,10 @@ import (
 
 type CronTrigger struct {
 	CronExpr     string `json:"cron_expr"`
-	TimeZoneName string `json:"time_zone_name"` // 为空默认就是 UTC
-	StartTime    string `json:"start_time"`     // 数据格式 time.DateTime "2006-01-02 15:04:05"
-	EndTime      string `json:"end_time"`       // 数据格式 time.DateTime "2006-01-02 15:04:05"
-	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	TimeZoneName string `json:"utc_time_zone"` // 默认就是 UTC
+	StartTime    string `json:"start_time"`    // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 
 	startTime  int64
 	startTimet time.Time
@@ -28,7 +28,11 @@ type CronTrigger struct {
 
 // GetLocation 获取时区
 func (ct *CronTrigger) GetLocation() (err error) {
-	ct.timeZone, err = time.LoadLocation(ct.TimeZoneName)
+	if ct.TimeZoneName == "" {
+		ct.TimeZoneName = DefaultTimeZone
+	}
+	ct.timeZone, err = ParseUtcTimeOffset(ct.TimeZoneName)
+	//ct.timeZone, err = time.LoadLocation(ct.TimeZoneName)
 	if err != nil {
 		return err
 	}
@@ -52,8 +56,6 @@ func (ct *CronTrigger) Init() error {
 			return fmt.Errorf(" StartTime `%s` TimeZone: %s error: %s", ct.StartTime, ct.TimeZoneName, err)
 		}
 		ct.startTime = sTime.UTC().UnixMilli()
-		ct.startTimet = sTime
-
 	}
 
 	if ct.EndTime == "" {
@@ -63,7 +65,7 @@ func (ct *CronTrigger) Init() error {
 		if err != nil {
 			return fmt.Errorf(" EndTime `%s` TimeZone: %s error: %s", ct.EndTime, ct.TimeZoneName, err)
 		}
-		ct.endTime = eTime.UnixMilli()
+		ct.endTime = eTime.UTC().UnixMilli()
 	}
 
 	if ct.Jitter == 0 {

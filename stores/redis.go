@@ -73,6 +73,10 @@ func (s *RedisStore) Init() error {
 	return nil
 }
 
+func (s *RedisStore) Close() error {
+	return s.RDB.Close()
+}
+
 func (s *RedisStore) AddJob(j job.Job) error {
 	state, err := s.StateDump(j)
 	if err != nil {

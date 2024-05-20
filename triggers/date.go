@@ -9,9 +9,9 @@ package triggers
 import "time"
 
 type DateTrigger struct {
-	RunDate      string `json:"run_date"`       // 数据格式 time.DateTime "2006-01-02 15:04:05"
-	TimeZoneName string `json:"time_zone_name"` // 默认UTC
-	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	RunDate      string `json:"run_date"`      // 数据格式 time.DateTime "2006-01-02 15:04:05"
+	TimeZoneName string `json:"utc_time_zone"` // 默认UTC
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 	runDate      int64
 	timeZone     *time.Location
 	isInit       bool
@@ -19,7 +19,11 @@ type DateTrigger struct {
 
 // GetLocation 获取时区
 func (dt *DateTrigger) GetLocation() (err error) {
-	dt.timeZone, err = time.LoadLocation(dt.TimeZoneName)
+	if dt.TimeZoneName == "" {
+		dt.TimeZoneName = DefaultTimeZone
+	}
+	dt.timeZone, err = ParseUtcTimeOffset(dt.TimeZoneName)
+	//dt.timeZone, err = time.LoadLocation(dt.TimeZoneName)
 	if err != nil {
 		return err
 	}

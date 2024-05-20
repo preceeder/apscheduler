@@ -17,6 +17,11 @@ func (s *MemoryStore) Init() error {
 	return nil
 }
 
+func (s *MemoryStore) Close() error {
+	clear(s.jobs)
+	return nil
+}
+
 func (s *MemoryStore) AddJob(j job.Job) error {
 	s.jobs = append(s.jobs, j)
 	sort.Sort(job.JobSlice(s.jobs))

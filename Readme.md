@@ -3,24 +3,31 @@
 ```go
 package main
 
+
 import (
 	"context"
 	"fmt"
 	"github.com/preceeder/apscheduler"
+	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/triggers"
 	"log/slog"
+	"time"
 )
 
 func test(ctx context.Context, j job.Job) {
-	slog.Info("run job", "jobName", j.Name, "jobInfo", j.String())
+	slog.Info("run job", "jobName", j.Name)
 }
 
 func main(){
 	// 注册任务函数
 	job.RegisterJobsFunc(job.FuncInfo{Func: test, Name: "printJob", Description: "测试使用"})
-	
+    
+	// 注册 监听事件
+	events.RegisterEvent(events.EVENT_JOB_ERROR|events.EVENT_JOB_ADDED|events.EVENT_JOB_REMOVED, func(ei events.EventInfo) {
+		fmt.Println("lisenter:--->", ei)
+	})
 	
 	// 初始化 Scheduelr 
 	scheduler := apscheduler.NewScheduler()
@@ -66,6 +73,8 @@ func main(){
 		FuncName: "printJob",
 		Trigger: &triggers.IntervalTrigger{
 			Interval: 5 * 1000,  // 3s
+			TimeZoneName: time.Local.String(),
+			EndTime: "2024-05-20 16:13:26",
 		},
 
 		Replace:   true,

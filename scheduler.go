@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/preceeder/apscheduler/apsError"
+	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
 	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/stores"
@@ -43,6 +44,7 @@ func NewScheduler() *Scheduler {
 	var store map[string]stores.Store = map[string]stores.Store{stores.DefaultName: &stores.MemoryStore{}}
 	// 设置 slog 日志
 	logs.NewSlog()
+	events.StartEventsListen()
 	return &Scheduler{
 		store:  store,
 		mutexS: sync.RWMutex{},
@@ -57,12 +59,41 @@ func (s *Scheduler) IsRunning() bool {
 }
 
 // Bind the store
-func (s *Scheduler) SetStore(name string, sto stores.Store) error {
+func (s *Scheduler) SetStore(name string, sto stores.Store) (err error) {
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOBSTORE_ADDED,
+			Store:     &sto,
+			Error:     err,
+			Msg:       strings.Join([]string{"store name: ", name}, ""),
+		}
+	}()
 	s.store[name] = sto
-	if err := s.store[name].Init(); err != nil {
+	if err = s.store[name].Init(); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// RemoveStore remove store
+func (s *Scheduler) RemoveStore(name string) (err error) {
+	var Sotre stores.Store
+
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOBSTORE_REMOVED,
+			Store:     &Sotre,
+			Error:     err,
+			Msg:       strings.Join([]string{"store name: ", name}, ""),
+		}
+	}()
+	if sto, exists := s.store[name]; exists {
+		Sotre = sto
+		err := sto.Close()
+		delete(s.store, name)
+		return err
+	}
 	return nil
 }
 
@@ -78,22 +109,31 @@ func (s *Scheduler) getStore(name ...string) (stores.Store, error) {
 }
 
 func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
+	var err error
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOB_ADDED,
+			Job:       &j,
+			Error:     err,
+		}
+	}()
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
 
 	if j.Id == "" {
-		return j, apsError.JobIdError("can not is \"\"")
+		err = apsError.JobIdError("is can not empty")
+		return j, err
 	}
-	if err := j.Init(); err != nil {
+	if err = j.Init(); err != nil {
 		return job.Job{}, err
 	}
 
 	slog.Info(fmt.Sprintf("Scheduler add job `%s`.", j.Name))
-	// 要查询一下 所有的 村处理里有没有一样的任务id
+	// 要查询一下 所有的 存储器里有没有一样的任务id
 	var jobExists bool
 	// 检查任务是否已存在
 	for k, st := range s.store {
-		_, err := st.GetJob(j.Id)
+		_, err = st.GetJob(j.Id)
 		if err != nil {
 			if errors.As(err, &apsError.JobNotFoundErrorType) {
 				continue
@@ -103,7 +143,8 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 		}
 
 		if k != j.StoreName {
-			return j, apsError.JobExistsError(fmt.Sprintf("%s exists other store:%s", j.Id, k))
+			err = apsError.JobExistsError(fmt.Sprintf("%s exists other store:%s", j.Id, k))
+			return j, err
 		} else {
 			jobExists = true
 		}
@@ -119,14 +160,15 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 			slog.Info("add job to update", "job", j)
 
 		} else {
-			return j, apsError.JobExistsError(fmt.Sprintf("%s exists %s, can't update", j.Id, j.StoreName))
+			err = apsError.JobExistsError(fmt.Sprintf("%s exists %s, can't update", j.Id, j.StoreName))
+			return j, err
 		}
 	} else {
 		store, err := s.getStore(j.StoreName)
 		if err != nil {
 			return j, err
 		}
-		if err := store.AddJob(j); err != nil {
+		if err = store.AddJob(j); err != nil {
 			return j, err
 		}
 		slog.Info("add job", "job", j)
@@ -150,8 +192,8 @@ func (s *Scheduler) GetAllJobs() ([]job.Job, error) {
 	jobs := make([]job.Job, 0)
 	errs := make([]error, 0)
 	for _, store := range s.store {
-		if job, err := store.GetAllJobs(); err == nil {
-			jobs = append(jobs, job...)
+		if jb, err := store.GetAllJobs(); err == nil {
+			jobs = append(jobs, jb...)
 		} else {
 			errs = append(errs, err)
 		}
@@ -161,9 +203,18 @@ func (s *Scheduler) GetAllJobs() ([]job.Job, error) {
 
 // UpdateJob [job.Id, job.StoreName] 不能修改, 要修改job 可以线getJob, 然后update
 func (s *Scheduler) UpdateJob(j job.Job) (job.Job, error) {
+	var err error
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOB_MODIFIED,
+			Job:       &j,
+			Error:     err,
+		}
+	}()
+
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
-	err := j.Init()
+	err = j.Init()
 	if err != nil {
 		return j, err
 	}
@@ -199,19 +250,15 @@ func (s *Scheduler) _updateJob(j job.Job) (job.Job, error) {
 	if err := store.UpdateJob(j); err != nil {
 		return job.Job{}, err
 	}
-	slog.Info("update job", "oldjob", oJ, "newJob", j)
-
-	//if _, ok := s.getNextWakeupInterval(); !ok {
-	//	s.wakeup()
-	//}
+	//slog.Info("update job", "oldjob", oJ, "newJob", j)
 
 	return j, nil
 }
 
-func (s *Scheduler) DeleteJob(id string, storeName string) error {
+func (s *Scheduler) DeleteJob(id string, storeName string) (err error) {
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
-	err := s._deleteJob(id, storeName)
+	err = s._deleteJob(id, storeName)
 	if err != nil {
 		return err
 	}
@@ -219,7 +266,14 @@ func (s *Scheduler) DeleteJob(id string, storeName string) error {
 	return nil
 }
 
-func (s *Scheduler) _deleteJob(id string, storeName string) error {
+func (s *Scheduler) _deleteJob(id string, storeName string) (err error) {
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOB_REMOVED,
+			Job:       &job.Job{Id: id, StoreName: storeName},
+			Error:     err,
+		}
+	}()
 	slog.Info("delete job", "jobId", id)
 	if _, err := s.GetJob(id, storeName); err != nil {
 		return err
@@ -231,18 +285,31 @@ func (s *Scheduler) _deleteJob(id string, storeName string) error {
 	return store.DeleteJob(id)
 }
 
-func (s *Scheduler) DeleteAllJobs() error {
+func (s *Scheduler) DeleteAllJobs() (err error) {
+	var storeNames string
+	defer func() {
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_ALL_JOBS_REMOVED,
+			Error:     err,
+			Msg:       storeNames,
+		}
+	}()
+
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
 
 	slog.Info("delete all jobs.")
 	errs := make([]error, 0)
-	for _, store := range s.store {
-		if err := store.DeleteAllJobs(); err != nil {
+	var storeNameSlice = make([]string, 0)
+	for stn, store := range s.store {
+		storeNameSlice = append(storeNameSlice, stn)
+		if err = store.DeleteAllJobs(); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	storeNames = strings.Join(storeNameSlice, ",")
+	err = errors.Join(errs...)
+	return
 }
 
 func (s *Scheduler) PauseJob(id string, storeName string) (job.Job, error) {
@@ -293,9 +360,15 @@ func (s *Scheduler) ResumeJob(id string, storeName string) (job.Job, error) {
 func (s *Scheduler) _runJob(j job.Job) {
 	f := reflect.ValueOf(job.FuncMap[j.FuncName].Func)
 	if f.IsNil() {
-		slog.Warn(fmt.Sprintf("Job `%s` Func `%s` unregistered", j.Name, j.FuncName))
+		msg := fmt.Sprintf("Job `%s` Func `%s` unregistered", j.Name, j.FuncName)
+		events.EventChan <- events.EventInfo{
+			EventCode: events.EVENT_JOB_ERROR,
+			Job:       &j,
+			Error:     errors.New(msg),
+		}
+		slog.Warn(msg)
 	} else {
-		slog.Info(fmt.Sprintf("Job `%s` is running, next run time: `%s`", j.Name, time.UnixMilli(j.NextRunTime).Format(time.DateTime)))
+		slog.Info(fmt.Sprintf("Job `%s` is running, at time: `%s`", j.Name, time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano)))
 		go func() {
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(j.Timeout))
@@ -308,6 +381,11 @@ func (s *Scheduler) _runJob(j job.Job) {
 					if err := recover(); err != nil {
 						slog.Error(fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
 						slog.Debug(fmt.Sprintf("%s", string(debug.Stack())))
+						events.EventChan <- events.EventInfo{
+							EventCode: events.EVENT_JOB_ERROR,
+							Job:       &j,
+							Error:     err.(error),
+						}
 					}
 				}()
 
@@ -318,7 +396,13 @@ func (s *Scheduler) _runJob(j job.Job) {
 			case <-ch:
 				return
 			case <-ctx.Done():
-				slog.Warn(fmt.Sprintf("Job `%s` run timeout", j.Name))
+				err := fmt.Sprintf("Job `%s` run timeout", j.Name)
+				slog.Warn(err)
+				events.EventChan <- events.EventInfo{
+					EventCode: events.EVENT_JOB_ERROR,
+					Job:       &j,
+					Error:     errors.New(err),
+				}
 			}
 		}()
 	}
@@ -376,8 +460,6 @@ func (s *Scheduler) run() {
 						continue
 					}
 
-					j.NextRunTime = nextRunTime
-
 					if !isExpire {
 						err = s._scheduleJob(j)
 						if err != nil {
@@ -385,8 +467,16 @@ func (s *Scheduler) run() {
 							continue
 						}
 					} else {
-						slog.Info("job expire jump this exec", "jobId", j.Id, "next_run_time", nextRunTime)
+						// job 本次不执行
+						events.EventChan <- events.EventInfo{
+							EventCode: events.EVENT_JOB_MISSED,
+							Job:       &j,
+							Error:     err,
+						}
+						slog.Info("job expire jump this exec", "jobId", j.Id)
 					}
+					j.NextRunTime = nextRunTime
+					slog.Info("", "jobId", j.Id, "next_run_time", time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
 
 					err = s._flushJob(j)
 					if err != nil {

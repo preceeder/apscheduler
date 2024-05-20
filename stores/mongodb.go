@@ -49,6 +49,10 @@ func (s *MongoDBStore) Init() error {
 	return nil
 }
 
+func (s *MongoDBStore) Close() error {
+	return s.Client.Disconnect(ctx)
+}
+
 func (s *MongoDBStore) AddJob(j job.Job) error {
 	state, err := s.StateDump(j)
 	if err != nil {

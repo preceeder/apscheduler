@@ -13,11 +13,11 @@ import (
 )
 
 type IntervalTrigger struct {
-	StartTime    string `json:"start_time"`     // 数据格式 time.DateTime  "2006-01-02 15:04:05"
-	EndTime      string `json:"end_time"`       // 数据格式 time.DateTime  "2006-01-02 15:04:05"
-	Interval     int64  `json:"interval"`       // 单位 ms
-	TimeZoneName string `json:"time_zone_name"` // 默认UTC
-	Jitter       int64  `json:"Jitter"`         // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	StartTime    string `json:"start_time"`    // 数据格式 time.DateTime  "2006-01-02 15:04:05"
+	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime  "2006-01-02 15:04:05"
+	Interval     int64  `json:"interval"`      // 单位 ms
+	TimeZoneName string `json:"utc_time_zone"` // 默认UTC
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
 	timeZone     *time.Location
 	startTime    int64
 
@@ -27,7 +27,11 @@ type IntervalTrigger struct {
 
 // GetLocation 获取时区
 func (it *IntervalTrigger) GetLocation() (err error) {
-	it.timeZone, err = time.LoadLocation(it.TimeZoneName)
+	if it.TimeZoneName == "" {
+		it.TimeZoneName = DefaultTimeZone
+	}
+	it.timeZone, err = ParseUtcTimeOffset(it.TimeZoneName)
+	//it.timeZone, err = time.LoadLocation(it.TimeZoneName)
 	if err != nil {
 		return err
 	}
