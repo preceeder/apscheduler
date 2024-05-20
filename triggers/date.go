@@ -36,10 +36,10 @@ func (dt *DateTrigger) Init() error {
 		return err
 	}
 
-	dt.runDate = rt.UTC().Unix()
+	dt.runDate = rt.UTC().UnixMilli()
 
 	if dt.ExpireTime == 0 {
-		dt.ExpireTime = 1
+		dt.ExpireTime = 1000
 	}
 	return nil
 }
@@ -48,6 +48,9 @@ func (dt *DateTrigger) GetExpireTime() int64 {
 	return dt.ExpireTime
 }
 
+// GetNextRunTime
+// previousFireTime   ms
+// now   ms
 func (dt *DateTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
 	if !dt.isInit {
 		if err := dt.Init(); err != nil {

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-var MaxDate = time.Date(9999, 12, 30, 23, 59, 59, 0, time.UTC)
+var MaxDate = time.Date(9999, 9, 9, 9, 9, 9, 0, time.UTC)
 
 const (
 	TRIGGER_DATETIME = "datetime"

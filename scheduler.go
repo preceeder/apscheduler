@@ -108,12 +108,7 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 			jobExists = true
 		}
 	}
-	//store, err := s.getStore(j.StoreName)
-	//if err != nil {
-	//	return job.Job{}, err
-	//}
-	//
-	//_, err = store.GetJob(j.Id)
+
 	if jobExists {
 		// 存在且  任务可以更新
 		if j.Replace {
@@ -136,24 +131,6 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 		}
 		slog.Info("add job", "job", j)
 	}
-	//if err != nil {
-	//	if errors.As(err, &apsError.JobNotFoundErrorType) {
-	//		if err := store.AddJob(j); err != nil {
-	//			return job.Job{}, err
-	//		}
-	//		slog.Info("add job", "job", j)
-	//	} else {
-	//		return j, err
-	//	}
-	//} else {
-	//	// 存在 且 更新
-	//	if j.Replace {
-	//		js, err := s._updateJob(j)
-	//		if err != nil {
-	//			return js, err
-	//		}
-	//	}
-	//}
 
 	if s.isRunning {
 		s.jobChangeChan <- struct{}{}
@@ -280,7 +257,7 @@ func (s *Scheduler) PauseJob(id string, storeName string) (job.Job, error) {
 	}
 
 	j.Status = job.STATUS_PAUSED
-	now := time.Now().UTC().Unix()
+	now := time.Now().UTC().UnixMilli()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j)
 	if err != nil {
@@ -302,7 +279,7 @@ func (s *Scheduler) ResumeJob(id string, storeName string) (job.Job, error) {
 	}
 
 	j.Status = job.STATUS_RUNNING
-	now := time.Now().UTC().Unix()
+	now := time.Now().UTC().UnixMilli()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j)
 	if err != nil {
@@ -318,16 +295,10 @@ func (s *Scheduler) _runJob(j job.Job) {
 	if f.IsNil() {
 		slog.Warn(fmt.Sprintf("Job `%s` Func `%s` unregistered", j.Name, j.FuncName))
 	} else {
-		slog.Info(fmt.Sprintf("Job `%s` is running, next run time: `%d`", j.Name, j.NextRunTime))
+		slog.Info(fmt.Sprintf("Job `%s` is running, next run time: `%s`", j.Name, time.UnixMilli(j.NextRunTime).Format(time.DateTime)))
 		go func() {
-			timeout, err := time.ParseDuration(j.Timeout)
-			if err != nil {
-				e := &apsError.JobTimeoutError{FullName: j.Name, Timeout: j.Timeout, Err: err}
-				slog.Error(e.Error())
-				return
-			}
 
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(j.Timeout))
 			defer cancel()
 
 			ch := make(chan error, 1)
@@ -388,7 +359,7 @@ func (s *Scheduler) run() {
 			return
 		case <-s.timer.C:
 			now := time.Now().UTC()
-			nowi := now.Unix()
+			nowi := now.UnixMilli()
 			//js, err := s.GetAllJobs()
 			js, err := s.GetDueJos(nowi)
 			if err != nil {
@@ -497,9 +468,8 @@ func (s *Scheduler) getNextWakeupInterval() (time.Duration, bool) {
 		jobstore_next_run_time, err = store.GetNextRunTime()
 		if err != nil {
 			slog.Error(fmt.Sprintf("Scheduler get next wakeup interval error: %s", err))
-			jobstore_next_run_time = time.Now().UTC().Unix() + 1
+			jobstore_next_run_time = time.Now().UTC().UnixMilli() + 100
 		}
-		jobstore_next_run_time = jobstore_next_run_time * 1000
 		if jobstore_next_run_time != 0 && jobstore_next_run_time < next_wakeup_time {
 			next_wakeup_time = jobstore_next_run_time
 		}
@@ -511,9 +481,8 @@ func (s *Scheduler) getNextWakeupInterval() (time.Duration, bool) {
 		//nextWakeupInterval = time.Second
 		return 0, false
 	}
-	//fmt.Println(nextWakeupInterval, time.Duration(nextWakeupInterval))
 
-	return time.Duration(nextWakeupInterval * 1000000), true
+	return time.Duration(nextWakeupInterval) * time.Millisecond, true
 }
 
 func (s *Scheduler) wakeup() {

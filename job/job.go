@@ -12,8 +12,6 @@ import (
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/triggers"
 	"log/slog"
-	"reflect"
-	"runtime"
 	"time"
 )
 
@@ -32,17 +30,14 @@ type Job struct {
 	// and you need to register it through 'RegisterFuncs' before using it.
 	// Since it cannot be stored by serialization,
 	// when using gRPC or HTTP calls, you should use `FuncName`.
-	Func func(context.Context, Job) `json:"-"`
-	// The actual path of `Func`.
-	// This field has a higher priority than `Func`
-	FuncName string `json:"func_name"`
+	Func     func(context.Context, Job) `json:"-"`
+	FuncName string                     `json:"func_name"` // 必须和注册的函数名一致
 	// Arguments for `Func`.
 	Args map[string]any `json:"args"`
 	// The running timeout of `Func`.
-	// Default: `1h`
-	Timeout string `json:"timeout"`
-	// Automatic update, not manual setting.
-	// When the job is paused, this field is set to `9999-09-09 09:09:09`.
+	// ms Default: 3600*1000
+	Timeout int64 `json:"timeout"`
+	// Automatic update, not manual setting.  ms
 	NextRunTime int64 `json:"next_run_time"`
 	// Optional: `STATUS_RUNNING` | `STATUS_PAUSED`
 	// It should not be set manually.
@@ -65,11 +60,11 @@ func (j *Job) Init() error {
 	j.Status = STATUS_RUNNING
 
 	if j.FuncName == "" {
-		j.FuncName = getFuncName(j.Func)
+		return apsError.FuncNameNullError(j.Id)
 	}
 
-	if j.Timeout == "" {
-		j.Timeout = "1h"
+	if j.Timeout == 0 {
+		j.Timeout = 3600 * 1000
 	}
 
 	err := j.Trigger.Init()
@@ -77,7 +72,7 @@ func (j *Job) Init() error {
 		return err
 	}
 
-	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().Unix())
+	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().UnixMilli())
 	if err != nil {
 		return err
 	}
@@ -90,16 +85,16 @@ func (j *Job) Init() error {
 	return nil
 }
 
-// Called when the job run `init` or scheduler run `UpdateJob`.
 func (j *Job) Check() error {
+	// 检查任务函数是否存在
 	if _, ok := FuncMap[j.FuncName]; !ok {
 		return apsError.FuncUnregisteredError(j.FuncName)
 	}
 
-	_, err := time.ParseDuration(j.Timeout)
-	if err != nil {
-		return &apsError.JobTimeoutError{FullName: j.Name, Timeout: j.Timeout, Err: err}
-	}
+	//_, err := time.ParseDuration(j.Timeout)
+	//if err != nil {
+	//	return &apsError.JobTimeoutError{FullName: j.Name, Timeout: j.Timeout, Err: err}
+	//}
 
 	return nil
 }
@@ -133,34 +128,17 @@ func (j Job) String() string {
 	return string(jobStr)
 }
 
-// StateDump Serialize Job and convert to Bytes
-
-type FuncPkg struct {
-	Func func(context.Context, Job)
-	// About this function.
-	Info string
+type FuncInfo struct {
+	Func        func(context.Context, Job)
+	Name        string // 全局唯一函数标志
+	Description string // 函数描述
 }
 
-var FuncMap = make(map[string]FuncPkg)
+var FuncMap = make(map[string]FuncInfo)
 
-func FuncMapReadable() []map[string]string {
-	funcs := []map[string]string{}
-	for fName, fPkg := range FuncMap {
-		funcs = append(funcs, map[string]string{
-			"name": fName, "info": fPkg.Info,
-		})
+// RegisterJobsFunc 注册全局唯一函数
+func RegisterJobsFunc(fis ...FuncInfo) {
+	for _, fi := range fis {
+		FuncMap[fi.Name] = fi
 	}
-
-	return funcs
-}
-
-func RegisterFuncs(fps ...FuncPkg) {
-	for _, fp := range fps {
-		fName := getFuncName(fp.Func)
-		FuncMap[fName] = fp
-	}
-}
-
-func getFuncName(f func(context.Context, Job)) string {
-	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
 }

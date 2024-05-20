@@ -15,7 +15,7 @@ import (
 type IntervalTrigger struct {
 	StartTime    string `json:"start_time"` // time.DateTime
 	EndTime      string `json:"end_time"`   // time.DateTime
-	Interval     int64  `json:"interval"`   // 单位秒
+	Interval     int64  `json:"interval"`   // 单位 ms
 	TimeZoneName string `json:"time_zone_name"`
 	ExpireTime   int64  `json:"expire_time"` // 任务超过多长时间就是过期, 过期则本次不执行 单位 time.Second, 也是误差值, 一般情况拿到这个任务做判定的时候 now > NextRunTime 比较微小的值
 	timeZone     *time.Location
@@ -45,29 +45,29 @@ func (it *IntervalTrigger) Init() error {
 	}
 	now := time.Now()
 	if it.StartTime == "" {
-		it.startTime = now.UTC().Unix()
+		it.startTime = now.UTC().UnixMilli()
 		it.StartTime = now.In(it.timeZone).Format(time.DateTime)
 	} else {
 		sTime, err := time.ParseInLocation(time.DateTime, it.StartTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" StartTime `%s` TimeZone: %s error: %s", it.StartTime, it.TimeZoneName, err)
 		}
-		it.startTime = sTime.UTC().Unix()
+		it.startTime = sTime.UTC().UnixMilli()
 	}
 
 	if it.EndTime == "" {
-		it.endTime = MaxDate.UTC().Unix()
+		it.endTime = MaxDate.UTC().UnixMilli()
 	} else {
 		eTime, err := time.ParseInLocation(time.DateTime, it.EndTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" EndTime `%s` TimeZone: %s error: %s", it.EndTime, it.TimeZoneName, err)
 		}
-		it.endTime = eTime.UTC().Unix()
+		it.endTime = eTime.UTC().UnixMilli()
 	}
 	it.isInit = true
 
 	if it.ExpireTime == 0 {
-		it.ExpireTime = 1
+		it.ExpireTime = 1000
 	}
 
 	return nil
@@ -77,6 +77,9 @@ func (it *IntervalTrigger) GetExpireTime() int64 {
 	return it.ExpireTime
 }
 
+// GetNextRunTime
+// previousFireTime   ms
+// now   ms
 func (it *IntervalTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
 	var nextRunTime int64
 	if !it.isInit {

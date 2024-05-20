@@ -24,6 +24,12 @@ func (e FuncUnregisteredError) Error() string {
 	return fmt.Sprintf("function `%s` unregistered!", string(e))
 }
 
+type FuncNameNullError string
+
+func (e FuncNameNullError) Error() string {
+	return fmt.Sprintf("job: %s  funcName is empty", string(e))
+}
+
 type JobExpireError string
 
 func (e JobExpireError) Error() string { return fmt.Sprintf("job is expire `%s`", string(e)) }

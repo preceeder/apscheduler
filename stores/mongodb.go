@@ -1,5 +1,6 @@
 package stores
 
+// 还没有测试, 有问题, 等需要用到的时候在测试
 import (
 	"bytes"
 	"encoding/gob"

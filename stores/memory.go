@@ -39,7 +39,6 @@ func (s *MemoryStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 			dueIndex = i
 		}
 	}
-
 	return s.jobs[0 : dueIndex+1], nil
 }
 
