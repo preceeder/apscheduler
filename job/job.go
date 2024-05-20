@@ -26,12 +26,8 @@ type Job struct {
 	// job name
 	Name    string `json:"name"`
 	Trigger triggers.Trigger
-	// The job actually runs the function,
-	// and you need to register it through 'RegisterFuncs' before using it.
-	// Since it cannot be stored by serialization,
-	// when using gRPC or HTTP calls, you should use `FuncName`.
-	Func     func(context.Context, Job) `json:"-"`
-	FuncName string                     `json:"func_name"` // 必须和注册的函数名一致
+	// 注册函数名
+	FuncName string `json:"func_name"` // 必须和注册的函数名一致
 	// Arguments for `Func`.
 	Args map[string]any `json:"args"`
 	// The running timeout of `Func`.
