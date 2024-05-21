@@ -48,15 +48,17 @@ func RegisterEvent(eventType Event, ef EventFunc) {
 // StartEventsListen 开启事物监听
 func StartEventsListen() {
 	go func() {
-		defer try.CatchException(func(err any) {
-			slog.Error("EventsHandler error", "error", err)
-		})
 		for {
 			select {
 			case ch := <-EventChan:
 				for code, fn := range EventMap {
 					if (code & ch.EventCode) == ch.EventCode {
-						fn(ch)
+						go func(fn EventFunc, ch EventInfo) {
+							defer try.CatchException(func(err any) {
+								slog.Error("EventsHandler error", "error", err, "eventInfo", ch, "eventFunc", fn)
+							})
+							fn(ch)
+						}(fn, ch)
 					}
 				}
 			}

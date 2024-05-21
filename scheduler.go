@@ -356,7 +356,6 @@ func (s *Scheduler) ResumeJob(id string, storeName string) (job.Job, error) {
 	return j, nil
 }
 
-// Used in standalone mode.
 func (s *Scheduler) _runJob(j job.Job) {
 	f := reflect.ValueOf(job.FuncMap[j.FuncName].Func)
 	if f.IsNil() {
@@ -422,7 +421,6 @@ func (s *Scheduler) _flushJob(j job.Job) error {
 }
 
 func (s *Scheduler) _scheduleJob(j job.Job) error {
-	// In standalone mode.
 	s._runJob(j)
 	return nil
 }
