@@ -7,6 +7,7 @@
 package events
 
 import (
+	"context"
 	"github.com/preceeder/apscheduler/job"
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/try"
@@ -46,8 +47,8 @@ func RegisterEvent(eventType Event, ef EventFunc) {
 }
 
 // StartEventsListen 开启事物监听
-func StartEventsListen() {
-	go func() {
+func StartEventsListen(ctx context.Context) {
+	go func(ctx context.Context) {
 		for {
 			select {
 			case ch := <-EventChan:
@@ -61,8 +62,10 @@ func StartEventsListen() {
 						}(fn, ch)
 					}
 				}
+			case <-ctx.Done():
+				break
 			}
 		}
-	}()
+	}(ctx)
 
 }

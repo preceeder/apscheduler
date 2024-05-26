@@ -30,24 +30,32 @@ type Scheduler struct {
 	store map[string]stores.Store
 	// When the time is up, the scheduler will wake up.
 	timer *time.Timer
-	// Input is received when `stop` is called or no job in store.
-	quitChan chan struct{}
 	// reset timer
 	jobChangeChan chan struct{}
+	instances     map[string]int
 	// It should not be set manually.
 	isRunning bool
 	mutexS    sync.RWMutex
+	// Input is received when `stop` is called
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewScheduler 默认创建一个 MemoryStore
-func NewScheduler() *Scheduler {
-	var store map[string]stores.Store = map[string]stores.Store{stores.DefaultName: &stores.MemoryStore{}}
+func NewScheduler(logConfig ...logs.SlogConfig) *Scheduler {
+	//var store map[string]stores.Store = map[string]stores.Store{stores.DefaultName: &stores.MemoryStore{}}
 	// 设置 slog 日志
-	logs.NewSlog()
-	events.StartEventsListen()
+	logs.NewSlog(logConfig...)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	events.StartEventsListen(ctx)
+
 	return &Scheduler{
-		store:  store,
-		mutexS: sync.RWMutex{},
+		store:     map[string]stores.Store{},
+		mutexS:    sync.RWMutex{},
+		instances: make(map[string]int),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -188,6 +196,22 @@ func (s *Scheduler) GetJob(id string, storeName string) (job.Job, error) {
 	return store.GetJob(id)
 }
 
+// QueryJob 查询job 没有storeName
+func (s *Scheduler) QueryJob(id string) (job.Job, error) {
+	errs := make([]error, 0)
+	for _, store := range s.store {
+		if jb, err := store.GetJob(id); err == nil {
+			return jb, errors.Join(errs...)
+		} else {
+			if errors.As(err, &apsError.JobNotFoundErrorType) {
+				continue
+			}
+			errs = append(errs, err)
+		}
+	}
+	return job.Job{}, errors.Join(errs...)
+}
+
 func (s *Scheduler) GetAllJobs() ([]job.Job, error) {
 	jobs := make([]job.Job, 0)
 	errs := make([]error, 0)
@@ -238,9 +262,9 @@ func (s *Scheduler) _updateJob(j job.Job) (job.Job, error) {
 		j.Status = oJ.Status
 	}
 
-	if err := j.Check(); err != nil {
-		return job.Job{}, err
-	}
+	//if err := j.Check(); err != nil {
+	//	return job.Job{}, err
+	//}
 
 	store, err := s.getStore(j.StoreName)
 	if err != nil {
@@ -250,6 +274,7 @@ func (s *Scheduler) _updateJob(j job.Job) (job.Job, error) {
 	if err := store.UpdateJob(j); err != nil {
 		return job.Job{}, err
 	}
+
 	//slog.Info("update job", "oldjob", oJ, "newJob", j)
 
 	return j, nil
@@ -368,7 +393,13 @@ func (s *Scheduler) _runJob(j job.Job) {
 		slog.Warn(msg)
 	} else {
 		slog.Info(fmt.Sprintf("Job `%s` is running, at time: `%s`", j.Name, time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano)))
+
 		go func() {
+			s.instances[j.Id] += 1
+
+			defer func() {
+				s.instances[j.Id] -= 1
+			}()
 
 			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(j.Timeout))
 			defer cancel()
@@ -433,12 +464,9 @@ func (s *Scheduler) RunJob(j job.Job) error {
 	return nil
 }
 
-func (s *Scheduler) run() {
+func (s *Scheduler) run(ctx context.Context) {
 	for {
 		select {
-		case <-s.quitChan:
-			slog.Info("Scheduler quit.")
-			return
 		case <-s.timer.C:
 			now := time.Now().UTC()
 			nowi := now.UnixMilli()
@@ -458,24 +486,33 @@ func (s *Scheduler) run() {
 						continue
 					}
 
-					if !isExpire {
+					if isExpire {
+						// job 本次不执行
+						events.EventChan <- events.EventInfo{
+							EventCode: events.EVENT_JOB_MISSED,
+							Job:       &j,
+							Error:     errors.New("过期"),
+						}
+						slog.Info("job expire jump this exec", "jobId", j.Id)
+
+					} else if s.instances[j.Id] >= j.MaxInstance {
+						// job 本次不执行
+						events.EventChan <- events.EventInfo{
+							EventCode: events.EVENT_JOB_MISSED,
+							Job:       &j,
+							Error:     errors.New("执行的任务数量超限"),
+						}
+						slog.Info("job max instance jump this exec", "jobId", j.Id)
+					} else {
 						err = s._scheduleJob(j)
 						if err != nil {
 							slog.Error(fmt.Sprintf("Scheduler schedule job `%s` error: %s", j.Name, err))
 							continue
 						}
-					} else {
-						// job 本次不执行
-						events.EventChan <- events.EventInfo{
-							EventCode: events.EVENT_JOB_MISSED,
-							Job:       &j,
-							Error:     err,
-						}
-						slog.Info("job expire jump this exec", "jobId", j.Id)
 					}
+
 					j.NextRunTime = nextRunTime
 					slog.Info("", "jobId", j.Id, "next_run_time", time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
-
 					err = s._flushJob(j)
 					if err != nil {
 						slog.Error(fmt.Sprintf("Scheduler %s", err))
@@ -485,15 +522,25 @@ func (s *Scheduler) run() {
 					break
 				}
 			}
-
 			s.jobChangeChan <- struct{}{}
+		case <-ctx.Done():
+			slog.Info("Scheduler quit.")
 
+			break
+		}
+	}
+}
+
+func (s *Scheduler) weakUp(ctx context.Context) {
+	for {
+		select {
 		case <-s.jobChangeChan:
 			nextWakeupInterval, _ := s.getNextWakeupInterval()
 			slog.Info(fmt.Sprintf("Scheduler next wakeup interval %s", nextWakeupInterval))
 
 			s.timer.Reset(nextWakeupInterval)
-
+		case <-ctx.Done():
+			break
 		}
 	}
 }
@@ -523,11 +570,11 @@ func (s *Scheduler) Start() {
 	}
 
 	s.timer = time.NewTimer(0)
-	s.quitChan = make(chan struct{}, 3)
 	s.jobChangeChan = make(chan struct{}, 3)
 	s.isRunning = true
 
-	go s.run()
+	go s.weakUp(s.ctx)
+	go s.run(s.ctx)
 
 	slog.Info("Scheduler start.")
 }
@@ -540,8 +587,7 @@ func (s *Scheduler) Stop() {
 		slog.Info("Scheduler has stopped.")
 		return
 	}
-
-	s.quitChan <- struct{}{}
+	s.cancel()
 	s.isRunning = false
 
 	slog.Info("Scheduler stop.")

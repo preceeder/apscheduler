@@ -88,6 +88,7 @@ func (s *RedisStore) AddJob(j job.Job) error {
 		pipe.ZAdd(ctx, s.RunTimesKey, redis.Z{Score: float64(j.NextRunTime), Member: j.Id})
 		return nil
 	})
+
 	if err != nil {
 		return err
 	}
@@ -96,6 +97,7 @@ func (s *RedisStore) AddJob(j job.Job) error {
 }
 
 func (s *RedisStore) GetJob(id string) (job.Job, error) {
+
 	state, err := s.RDB.HGet(ctx, s.JobsKey, id).Bytes()
 	if err == redis.Nil {
 		return job.Job{}, apsError.JobNotFoundError(id)
@@ -213,12 +215,14 @@ func (s *RedisStore) Clear() error {
 }
 
 func (s *RedisStore) StateDump(j job.Job) ([]byte, error) {
+
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	err := enc.Encode(j)
 	if err != nil {
 		return nil, err
 	}
+
 	return buf.Bytes(), nil
 }
 
@@ -231,5 +235,6 @@ func (s *RedisStore) StateLoad(state []byte) (job.Job, error) {
 	if err != nil {
 		return job.Job{}, err
 	}
+
 	return j, nil
 }
