@@ -549,8 +549,7 @@ func (s *Scheduler) run(ctx context.Context) {
 			s.jobChangeChan <- struct{}{}
 		case <-ctx.Done():
 			slog.Info("Scheduler quit.")
-
-			break
+			return
 		}
 	}
 }
@@ -564,7 +563,8 @@ func (s *Scheduler) weakUp(ctx context.Context) {
 
 			s.timer.Reset(nextWakeupInterval)
 		case <-ctx.Done():
-			break
+			slog.Info("WeakUp quit.")
+			return
 		}
 	}
 }

@@ -63,7 +63,8 @@ func StartEventsListen(ctx context.Context) {
 					}
 				}
 			case <-ctx.Done():
-				break
+				slog.Info("Events Listen quit.")
+				return
 			}
 		}
 	}(ctx)

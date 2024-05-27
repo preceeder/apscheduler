@@ -23,11 +23,17 @@ func TestRegisterEvent(t *testing.T) {
 		args args
 	}{
 		// TODO: Add test cases.
-		{name: "o1", args: args{eventType: EVENT_JOB_EXECUTED | EVENT_JOB_ADDED, ef: func(ctx context.Context, e Event, jb job.Job, msg string) { fmt.Println("hahah", e, msg) }}}}
+		{name: "o1", args: args{eventType: EVENT_JOB_EXECUTED | EVENT_JOB_ADDED, ef: func(info EventInfo) { fmt.Println("hahah", info) }}}}
+	go StartEventsListen(context.Background())
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			RegisterEvent(tt.args.eventType, tt.args.ef)
-			EventsHandler(context.Background(), EVENT_JOB_EXECUTED, job.Job{}, "不是吧,还要这样")
+			EventChan <- EventInfo{
+				EventCode: EVENT_JOB_EXECUTED,
+				Job:       &job.Job{},
+				Msg:       "不是吧,还要这样",
+			}
 
 		})
 	}
