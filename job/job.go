@@ -41,7 +41,7 @@ type Job struct {
 	// jobStoreName
 	StoreName   string `json:"store_name"`   // 一旦设置,不能修改
 	Replace     bool   `json:"replace"`      // 任务存在是否更新 默认false
-	MaxInstance int    `json:"max_instance"` // 改任务可以同时存在的个数 最少1个,  默认: 99 个
+	MaxInstance int    `json:"max_instance"` // 改任务可以同时存在的个数 最少1个, 默认 1
 }
 
 // `sort.Interface`, sorted by 'NextRunTime', ascend.
@@ -76,7 +76,7 @@ func (j *Job) Init() error {
 	j.NextRunTime = nextRunTime
 
 	if j.MaxInstance == 0 {
-		j.MaxInstance = 99
+		j.MaxInstance = 1
 	}
 	if err := j.Check(); err != nil {
 		return err
