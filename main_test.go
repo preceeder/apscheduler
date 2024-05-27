@@ -35,7 +35,7 @@ func TestRunMain(t *testing.T) {
 
 func test(ctx context.Context, j job.Job) {
 	slog.Info("run job", "jobName", j.Name)
-	time.Sleep(time.Second * 9)
+	//time.Sleep(time.Second * 9)
 }
 
 func RunMain() {
@@ -47,8 +47,9 @@ func RunMain() {
 	job.RegisterJobsFunc(job.FuncInfo{Func: test, Name: "printJob", Description: "测试使用"})
 
 	redis := stores.RedisConfig{
-		Host:        "127.0.0.1",
-		Port:        "6371",
+		Host: "127.0.0.1",
+		//Port: "6379",
+		Port:        "56379",
 		Password:    "QDjk9UdkoD6cv",
 		Db:          0,
 		MaxIdle:     2,
@@ -62,18 +63,19 @@ func RunMain() {
 		return
 	}
 
+	startTime := time.Now().Format(time.DateTime)
 	job1 := job.Job{
 		Name:     "job1",
 		Id:       "job1",
 		FuncName: "printJob",
 		Trigger: &triggers.IntervalTrigger{
+			StartTime:    startTime,
 			Interval:     3 * 1000,
 			TimeZoneName: "UTC+8",
 		},
-		Replace:     true,
-		StoreName:   "redis",
-		MaxInstance: 2,
-		Args:        map[string]any{"arg1": "1", "arg2": "2", "arg3": "3"},
+		Replace:   true,
+		StoreName: "redis",
+		Args:      map[string]any{"arg1": "1", "arg2": "2", "arg3": "3"},
 	}
 
 	job1, err = scheduler.AddJob(job1)
@@ -97,21 +99,59 @@ func RunMain() {
 	//	return
 	//}
 	//
-	//job2 := job.Job{
-	//	Name:     "job2",
-	//	Id:       "job2",
-	//	FuncName: "printJob",
-	//	Trigger: &triggers.IntervalTrigger{
-	//		Interval: 5 * 1000,
-	//	},
-	//	Replace:   true,
-	//	StoreName: "mysql",
-	//	Args:      map[string]any{"arg1": "mysql", "arg2": "2", "arg3": "3"},
-	//}
-	//job2, err = scheduler.AddJob(job2)
-	//if err != nil {
-	//	fmt.Println(err)
-	//}
+	job2 := job.Job{
+		Name:     "job3",
+		Id:       "job3",
+		FuncName: "printJob",
+		Trigger: &triggers.IntervalTrigger{
+			StartTime:    startTime,
+			Interval:     3 * 1000,
+			TimeZoneName: "UTC+8",
+		},
+		Replace:   true,
+		StoreName: "redis",
+		Args:      map[string]any{"arg1": "mysql", "arg2": "2", "arg3": "3"},
+	}
+	job2, err = scheduler.AddJob(job2)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	job4 := job.Job{
+		Name:     "job4",
+		Id:       "job4",
+		FuncName: "printJob",
+		Trigger: &triggers.IntervalTrigger{
+			StartTime:    startTime,
+			Interval:     3 * 1000,
+			TimeZoneName: "UTC+8",
+		},
+		Replace:   true,
+		StoreName: "redis",
+		Args:      map[string]any{"arg1": "mysql", "arg2": "2", "arg3": "3"},
+	}
+	job4, err = scheduler.AddJob(job4)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	job5 := job.Job{
+		Name:     "job5",
+		Id:       "job5",
+		FuncName: "printJob",
+		Trigger: &triggers.IntervalTrigger{
+			StartTime:    startTime,
+			Interval:     3 * 1000,
+			TimeZoneName: "UTC+8",
+		},
+		Replace:   true,
+		StoreName: "redis",
+		Args:      map[string]any{"arg1": "mysql", "arg2": "2", "arg3": "3"},
+	}
+	job5, err = scheduler.AddJob(job5)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	scheduler.Start()
 

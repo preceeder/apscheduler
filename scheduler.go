@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/panjf2000/ants/v2"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
@@ -17,6 +18,7 @@ import (
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/triggers"
 	"log/slog"
+	"os"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -39,6 +41,7 @@ type Scheduler struct {
 	// Input is received when `stop` is called
 	ctx    context.Context
 	cancel context.CancelFunc
+	pool   *ants.Pool // 默认10000,   会被 执行job 和 update job 平分调
 }
 
 // NewScheduler 默认创建一个 MemoryStore
@@ -49,13 +52,18 @@ func NewScheduler(logConfig ...logs.SlogConfig) *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	events.StartEventsListen(ctx)
-
+	pool, err := ants.NewPool(10000, ants.WithNonblocking(true))
+	if err != nil {
+		slog.Error("init pool failed", "error", err.Error())
+		os.Exit(1)
+	}
 	return &Scheduler{
 		store:     map[string]stores.Store{},
 		mutexS:    sync.RWMutex{},
 		instances: make(map[string]int),
 		ctx:       ctx,
 		cancel:    cancel,
+		pool:      pool,
 	}
 }
 
@@ -262,9 +270,9 @@ func (s *Scheduler) _updateJob(j job.Job) (job.Job, error) {
 		j.Status = oJ.Status
 	}
 
-	//if err := j.Check(); err != nil {
-	//	return job.Job{}, err
-	//}
+	if err := j.Check(); err != nil {
+		return job.Job{}, err
+	}
 
 	store, err := s.getStore(j.StoreName)
 	if err != nil {
@@ -393,72 +401,76 @@ func (s *Scheduler) _runJob(j job.Job) {
 		slog.Warn(msg)
 	} else {
 		slog.Info(fmt.Sprintf("Job `%s` is running, at time: `%s`", j.Name, time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano)))
-
-		go func() {
-			s.instances[j.Id] += 1
-
-			defer func() {
-				s.instances[j.Id] -= 1
-			}()
-
-			ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(j.Timeout))
-			defer cancel()
-
-			ch := make(chan error, 1)
-			go func() {
-				defer close(ch)
-				defer func() {
-					if err := recover(); err != nil {
-						slog.Error(fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
-						slog.Debug(fmt.Sprintf("%s", string(debug.Stack())))
-						events.EventChan <- events.EventInfo{
-							EventCode: events.EVENT_JOB_ERROR,
-							Job:       &j,
-							Error:     err.(error),
-						}
-					}
-				}()
-
-				f.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(j)})
-			}()
-
-			select {
-			case <-ch:
-				return
-			case <-ctx.Done():
-				err := fmt.Sprintf("Job `%s` run timeout", j.Name)
-				slog.Warn(err)
-				events.EventChan <- events.EventInfo{
-					EventCode: events.EVENT_JOB_ERROR,
-					Job:       &j,
-					Error:     errors.New(err),
-				}
-			}
+		s.instances[j.Id] += 1
+		defer func() {
+			s.instances[j.Id] -= 1
 		}()
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(j.Timeout))
+		defer cancel()
+
+		ch := make(chan error, 1)
+		go func() {
+			defer close(ch)
+			defer func() {
+				if err := recover(); err != nil {
+					slog.Error(fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
+					slog.Debug(fmt.Sprintf("%s", string(debug.Stack())))
+					events.EventChan <- events.EventInfo{
+						EventCode: events.EVENT_JOB_ERROR,
+						Job:       &j,
+						Error:     err.(error),
+					}
+				}
+			}()
+
+			f.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(j)})
+		}()
+
+		select {
+		case <-ch:
+			return
+		case <-ctx.Done():
+			err := fmt.Sprintf("Job `%s` run timeout", j.Name)
+			slog.Warn(err)
+			events.EventChan <- events.EventInfo{
+				EventCode: events.EVENT_JOB_ERROR,
+				Job:       &j,
+				Error:     errors.New(err),
+			}
+		}
+
 	}
 }
 
-func (s *Scheduler) _flushJob(j job.Job) error {
-	if j.NextRunTime == 0 {
-		if err := s._deleteJob(j.Id, j.StoreName); err != nil {
-			return fmt.Errorf("delete job `%s` error: %s", j.Name, err)
+func (s *Scheduler) _flushJob(j job.Job, wg *sync.WaitGroup) func() {
+	return func() {
+		defer wg.Done()
+		if j.NextRunTime == 0 {
+			if err := s._deleteJob(j.Id, j.StoreName); err != nil {
+				slog.Error(fmt.Errorf("Scheduler delete job `%s` error: %s", j.Id, err).Error())
+				return
+			}
+		} else {
+			if _, err := s._updateJob(j); err != nil {
+				slog.Error(fmt.Errorf("Scheduler update job `%s` error: %s", j.Id, err).Error())
+
+				return
+			}
 		}
-	} else {
-		if _, err := s._updateJob(j); err != nil {
-			return fmt.Errorf("update job `%s` error: %s", j.Name, err)
-		}
+		return
 	}
-	return nil
+
 }
 
-func (s *Scheduler) _scheduleJob(j job.Job) error {
-	s._runJob(j)
-	return nil
+func (s *Scheduler) _scheduleJob(j job.Job) func() {
+	return func() {
+		s._runJob(j)
+	}
 }
 
 func (s *Scheduler) RunJob(j job.Job) error {
 	slog.Info(fmt.Sprintf("Scheduler run job `%s`.", j.Name))
-
 	s._runJob(j)
 
 	return nil
@@ -470,7 +482,6 @@ func (s *Scheduler) run(ctx context.Context) {
 		case <-s.timer.C:
 			now := time.Now().UTC()
 			nowi := now.UnixMilli()
-			//js, err := s.GetAllJobs()
 			js, err := s.GetDueJos(nowi)
 			if err != nil {
 				slog.Error(fmt.Sprintf("Scheduler get due jobs error: %s", err))
@@ -478,6 +489,7 @@ func (s *Scheduler) run(ctx context.Context) {
 				continue
 			}
 
+			wg := sync.WaitGroup{}
 			for _, j := range js {
 				if j.NextRunTime <= nowi {
 					nextRunTime, isExpire, err := j.NextRunTimeHandler(nowi)
@@ -504,24 +516,36 @@ func (s *Scheduler) run(ctx context.Context) {
 						}
 						slog.Info("job max instance jump this exec", "jobId", j.Id)
 					} else {
-						err = s._scheduleJob(j)
+						err := s.pool.Submit(s._scheduleJob(j))
 						if err != nil {
-							slog.Error(fmt.Sprintf("Scheduler schedule job `%s` error: %s", j.Name, err))
-							continue
+							slog.ErrorContext(ctx, "pool submit _scheduleJob", "error", err.Error(), "job", j)
 						}
+						//err = s._scheduleJob(j)
+						//if err != nil {
+						//	slog.Error(fmt.Sprintf("Scheduler schedule job `%s` error: %s", j.Name, err))
+						//	continue
+						//}
 					}
 
 					j.NextRunTime = nextRunTime
 					slog.Info("", "jobId", j.Id, "next_run_time", time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
-					err = s._flushJob(j)
+					// 更新任务会耗时 几十ms, 对其他任务有影响
+					err = s.pool.Submit(s._flushJob(j, &wg))
+					wg.Add(1)
 					if err != nil {
-						slog.Error(fmt.Sprintf("Scheduler %s", err))
-						continue
+						slog.ErrorContext(ctx, "pool submit _flushJob", "error", err.Error(), "job", j)
 					}
+					//err = s._flushJob(j)
+					//if err != nil {
+					//	slog.Error(fmt.Sprintf("Scheduler %s", err))
+					//	continue
+					//}
 				} else {
 					break
 				}
 			}
+			// wait job update completed
+			wg.Wait()
 			s.jobChangeChan <- struct{}{}
 		case <-ctx.Done():
 			slog.Info("Scheduler quit.")
@@ -582,6 +606,7 @@ func (s *Scheduler) Start() {
 func (s *Scheduler) Stop() {
 	s.mutexS.Lock()
 	defer s.mutexS.Unlock()
+	defer s.pool.Release()
 
 	if !s.isRunning {
 		slog.Info("Scheduler has stopped.")
