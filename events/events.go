@@ -9,9 +9,9 @@ package events
 import (
 	"context"
 	"github.com/preceeder/apscheduler/job"
+	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/try"
-	"log/slog"
 )
 
 type EventInfo struct {
@@ -56,14 +56,14 @@ func StartEventsListen(ctx context.Context) {
 					if (code & ch.EventCode) == ch.EventCode {
 						go func(fn EventFunc, ch EventInfo) {
 							defer try.CatchException(func(err any) {
-								slog.Error("EventsHandler error", "error", err, "eventInfo", ch, "eventFunc", fn)
+								logs.DefaultLog.Error(context.Background(), "EventsHandler error", "error", err, "eventInfo", ch, "eventFunc", fn)
 							})
 							fn(ch)
 						}(fn, ch)
 					}
 				}
 			case <-ctx.Done():
-				slog.Info("Events Listen quit.")
+				logs.DefaultLog.Info(context.Background(), "Events Listen quit.")
 				return
 			}
 		}

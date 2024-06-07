@@ -11,7 +11,7 @@ import "time"
 type DateTrigger struct {
 	RunDate      string `json:"run_date"`      // 数据格式 time.DateTime "2006-01-02 15:04:05"
 	TimeZoneName string `json:"utc_time_zone"` // 默认UTC
-	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行,默认 0 表示不管误差, 单位 ms time.Millisecond
 	runDate      int64
 	timeZone     *time.Location
 	isInit       bool
@@ -42,9 +42,9 @@ func (dt *DateTrigger) Init() error {
 
 	dt.runDate = rt.UTC().UnixMilli()
 
-	if dt.Jitter == 0 {
-		dt.Jitter = 1000
-	}
+	//if dt.Jitter == 0 {
+	//	dt.Jitter = 1000
+	//}
 	return nil
 }
 

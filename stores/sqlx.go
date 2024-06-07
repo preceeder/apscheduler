@@ -8,6 +8,7 @@ package stores
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/gob"
 	"errors"
@@ -16,7 +17,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
-	"log/slog"
+	"github.com/preceeder/apscheduler/logs"
 )
 
 const TABLE_NAME = "go_jobs"
@@ -48,7 +49,7 @@ type MysqlStore struct {
 
 func NewMysqlStore(cf MysqlConfig, tableName string) *MysqlStore {
 	dsn := fmt.Sprintf("%v:%v@tcp(%v:%v)/%v", cf.User, cf.Password, cf.Host, cf.Port, cf.Db)
-	slog.Info("链接数据库", "db", dsn)
+	logs.DefaultLog.Info(context.Background(), "链接数据库", "db", dsn)
 	// 安全链接  内部已经ping 了
 	db := sqlx.MustConnect("mysql", dsn)
 	db.SetMaxOpenConns(cf.MaxOpenCons)
@@ -236,11 +237,11 @@ func (s *MysqlStore) sqlPares(osql string, params any) (sql string, args []any) 
 	var err error
 	sql, args, err = sqlx.Named(osql, params)
 	if err != nil {
-		slog.Error("sqlx.Named error :" + err.Error())
+		logs.DefaultLog.Info(context.Background(), "sqlx.Named", "error :", err.Error())
 	}
 	sql, args, err = sqlx.In(sql, args...)
 	if err != nil {
-		slog.Error("sqlx.In error :" + err.Error())
+		logs.DefaultLog.Error(context.Background(), "sqlx.In error :"+err.Error())
 	}
 	sql = s.DB.Rebind(sql)
 	return sql, args

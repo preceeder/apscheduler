@@ -10,8 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/preceeder/apscheduler/apsError"
+	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/triggers"
-	"log/slog"
 	"time"
 )
 
@@ -100,7 +100,8 @@ func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
 
 	var err error
 	var IsExpire bool
-	if nowi-nextRunTIme >= j.Trigger.GetJitterTime() {
+	jitter := j.Trigger.GetJitterTime()
+	if jitter > 0 && nowi-nextRunTIme >= jitter {
 		// 本次任务过期, 不执行
 		IsExpire = true
 	}
@@ -109,7 +110,7 @@ func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
 	for nextRunTIme != 0 && nextRunTIme <= nowi {
 		nextRunTIme, err = j.Trigger.GetNextRunTime(nextRunTIme, nowi)
 		if err != nil {
-			slog.Info("NextRunTimeHandler error", "error", err.Error())
+			logs.DefaultLog.Info(context.Background(), "NextRunTimeHandler", "job", j, "error", err.Error())
 			break
 		}
 	}

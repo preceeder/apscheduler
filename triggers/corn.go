@@ -17,7 +17,7 @@ type CronTrigger struct {
 	TimeZoneName string `json:"utc_time_zone"` // 默认就是 UTC
 	StartTime    string `json:"start_time"`    // 数据格式 time.DateTime "2006-01-02 15:04:05"
 	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime "2006-01-02 15:04:05"
-	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 ms time.Millisecond,
 
 	startTime  int64
 	startTimet time.Time
@@ -67,10 +67,9 @@ func (ct *CronTrigger) Init() error {
 		}
 		ct.endTime = eTime.UTC().UnixMilli()
 	}
-
-	if ct.Jitter == 0 {
-		ct.Jitter = 1000 // 1000 ms
-	}
+	//if dt.Jitter == 0 {
+	//	dt.Jitter = 1000
+	//}
 
 	return nil
 }

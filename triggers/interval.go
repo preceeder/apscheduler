@@ -17,7 +17,7 @@ type IntervalTrigger struct {
 	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime  "2006-01-02 15:04:05"
 	Interval     int64  `json:"interval"`      // 单位 ms
 	TimeZoneName string `json:"utc_time_zone"` // 默认UTC
-	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 单位 ms time.Millisecond
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 ms time.Millisecond
 	timeZone     *time.Location
 	startTime    int64
 
@@ -71,9 +71,9 @@ func (it *IntervalTrigger) Init() error {
 	}
 	it.isInit = true
 
-	if it.Jitter == 0 {
-		it.Jitter = 1000
-	}
+	//if it.Jitter == 0 {
+	//	it.Jitter = 1000
+	//}
 
 	return nil
 }
