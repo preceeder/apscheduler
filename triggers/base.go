@@ -16,20 +16,16 @@ import (
 	"time"
 )
 
-var MaxDate = time.Date(9999, 9, 9, 9, 9, 9, 0, time.UTC)
+// MaxDate 不能太大,  time.Duration 最大只能表示290年
+var MaxDate = time.Now().Add(time.Hour * 24 * 365).UTC()
 
 // DefaultTimeZone 世界时区共有 26个 UTC-12 ~ UTC+14
 // DefaultTimeZone UTC+9:30
 var DefaultTimeZone = "UTC"
 
-const (
-	TRIGGER_DATETIME = "datetime"
-	TRIGGER_INTERVAL = "interval"
-	TRIGGER_CRON     = "cron"
-)
-
 type Trigger interface {
 	Init() error
+	GetLocation() error
 	GetJitterTime() int64
 	GetNextRunTime(previousFireTime, now int64) (int64, error)
 }
