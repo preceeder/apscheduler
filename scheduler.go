@@ -295,13 +295,14 @@ func (s *Scheduler) run(ctx context.Context) {
 					}
 
 					j.NextRunTime = nextRunTime
-					logs.DefaultLog.Info(ct, "", "jobId", j.Id, "next_run_time", time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
 					// 更新任务会耗时 几十ms, 对其他任务有影响
 					wg.Add(1)
 					err = s.pool.Submit(s._flushJob(j, &wg))
 					if err != nil {
 						logs.DefaultLog.Error(ct, "", "pool submit _flushJob", "error", err.Error(), "job", j)
 					}
+					logs.DefaultLog.Info(ct, "", "jobId", j.Id, "next_run_time", time.UnixMilli(j.NextRunTime).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
+
 				} else {
 					break
 				}

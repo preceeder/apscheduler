@@ -47,6 +47,7 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 		_, err = st.GetJob(j.Id)
 		if err != nil {
 			if errors.As(err, &apsError.JobNotFoundErrorType) {
+				err = nil
 				continue
 			} else {
 				return j, err
@@ -215,7 +216,7 @@ func (s *Scheduler) QueryJob(id string) (job.Job, error) {
 	if err != nil {
 		return job.Job{}, err
 	}
-	return j, apsError.JobNotFoundError(id)
+	return j, nil
 }
 
 // GetJobsByStoreName 获取指定 store 下所有的job
@@ -322,8 +323,8 @@ func (s *Scheduler) PauseJobByStoreName(id string, storeName string) (job.Job, e
 	}
 
 	j.Status = job.STATUS_PAUSED
-	now := time.Now().UTC().UnixMilli()
-	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
+	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().UnixMilli()
+	j.NextRunTime = now
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {
 		return job.Job{}, err
@@ -342,8 +343,8 @@ func (s *Scheduler) PauseJob(id string) (job.Job, error) {
 		return job.Job{}, err
 	}
 	j.Status = job.STATUS_PAUSED
-	now := time.Now().UTC().UnixMilli()
-	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
+	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().UnixMilli()
+	j.NextRunTime = now
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {
 		return job.Job{}, err

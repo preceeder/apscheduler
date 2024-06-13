@@ -9,6 +9,7 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/triggers"
@@ -72,6 +73,9 @@ func (j *Job) Init() error {
 	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().UnixMilli())
 	if err != nil {
 		return err
+	}
+	if nextRunTime == 0 {
+		return errors.New("endTime can't lt startTime")
 	}
 	j.NextRunTime = nextRunTime
 

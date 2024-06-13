@@ -40,7 +40,7 @@ func (s *MemoryStore) GetJob(id string) (job.Job, error) {
 func (s *MemoryStore) GetDueJobs(timestamp int64) ([]job.Job, error) {
 	var dueIndex = -1
 	for i, sj := range s.jobs {
-		if sj.NextRunTime < timestamp {
+		if sj.NextRunTime <= timestamp {
 			dueIndex = i
 		}
 	}
