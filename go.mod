@@ -5,12 +5,13 @@ go 1.22.1
 toolchain go1.22.3
 
 require (
+	github.com/duke-git/lancet/v2 v2.3.1
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gorhill/cronexpr v0.0.0-20180427100037-88b0669f7d75
 	github.com/jmoiron/sqlx v1.4.0
+	github.com/panjf2000/ants/v2 v2.9.1
 	github.com/redis/go-redis/v9 v9.2.1
 	go.mongodb.org/mongo-driver v1.15.0
-	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (
@@ -21,7 +22,6 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/klauspost/compress v1.17.1 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect
-	github.com/panjf2000/ants/v2 v2.9.1 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect

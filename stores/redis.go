@@ -10,10 +10,8 @@ import (
 	"strconv"
 )
 
-const (
-	JOBS_KEY      = "go.apscheduler.jobs"
-	RUN_TIMES_KEY = "go.apscheduler.run_times"
-)
+var JOBS_KEY = "go.apscheduler.jobs"
+var RUN_TIMES_KEY = "go.apscheduler.run_times"
 
 type RedisConfig struct {
 	Host        string `json:"host"`

@@ -13,10 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const (
-	DATABASE   = "apscheduler"
-	COLLECTION = "jobs"
-)
+var DATABASE = "apscheduler"
+var COLLECTION = "jobs"
 
 // Stores jobs in a MongoDB database.
 type MongoDBStore struct {

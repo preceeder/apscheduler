@@ -15,9 +15,9 @@ import (
 type IntervalTrigger struct {
 	StartTime    string `json:"start_time"`    // 数据格式 time.DateTime  "2006-01-02 15:04:05"
 	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime  "2006-01-02 15:04:05"
-	Interval     int64  `json:"interval"`      // 单位 ms
+	Interval     int64  `json:"interval"`      // 单位 s
 	TimeZoneName string `json:"utc_time_zone"` // 默认UTC
-	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 ms time.Millisecond
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 s time.Second
 	timeZone     *time.Location
 	startTime    int64
 
@@ -50,24 +50,24 @@ func (it *IntervalTrigger) Init() error {
 	}
 	now := time.Now()
 	if it.StartTime == "" {
-		it.startTime = now.UTC().UnixMilli()
+		it.startTime = now.UTC().Unix()
 		it.StartTime = now.In(it.timeZone).Format(time.DateTime)
 	} else {
 		sTime, err := time.ParseInLocation(time.DateTime, it.StartTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" StartTime `%s` TimeZone: %s error: %s", it.StartTime, it.TimeZoneName, err)
 		}
-		it.startTime = sTime.UTC().UnixMilli()
+		it.startTime = sTime.UTC().Unix()
 	}
 
 	if it.EndTime == "" {
-		it.endTime = MaxDate.UTC().UnixMilli()
+		it.endTime = MaxDate.UTC().Unix()
 	} else {
 		eTime, err := time.ParseInLocation(time.DateTime, it.EndTime, it.timeZone)
 		if err != nil {
 			return fmt.Errorf(" EndTime `%s` TimeZone: %s error: %s", it.EndTime, it.TimeZoneName, err)
 		}
-		it.endTime = eTime.UTC().UnixMilli()
+		it.endTime = eTime.UTC().Unix()
 	}
 	it.isInit = true
 
@@ -83,8 +83,8 @@ func (it *IntervalTrigger) GetJitterTime() int64 {
 }
 
 // GetNextRunTime
-// previousFireTime   ms
-// now   ms
+// previousFireTime   s
+// now   s
 func (it *IntervalTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
 	var nextRunTime int64
 	if !it.isInit {

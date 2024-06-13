@@ -17,7 +17,7 @@ type CronTrigger struct {
 	TimeZoneName string `json:"utc_time_zone"` // 默认就是 UTC
 	StartTime    string `json:"start_time"`    // 数据格式 time.DateTime "2006-01-02 15:04:05"
 	EndTime      string `json:"end_time"`      // 数据格式 time.DateTime "2006-01-02 15:04:05"
-	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 ms time.Millisecond,
+	Jitter       int64  `json:"Jitter"`        // 时间误差, 超过这个误差时间就忽略本次执行, 默认 0 表示不管误差, 单位 s time.Second,
 
 	startTime  int64
 	startTimet time.Time
@@ -47,7 +47,7 @@ func (ct *CronTrigger) Init() error {
 	}
 	now := time.Now()
 	if ct.StartTime == "" {
-		ct.startTime = now.UTC().UnixMilli()
+		ct.startTime = now.UTC().Unix()
 		ct.startTimet = now.In(ct.timeZone)
 		ct.StartTime = now.In(ct.timeZone).Format(time.DateTime)
 	} else {
@@ -55,17 +55,17 @@ func (ct *CronTrigger) Init() error {
 		if err != nil {
 			return fmt.Errorf(" StartTime `%s` TimeZone: %s error: %s", ct.StartTime, ct.TimeZoneName, err)
 		}
-		ct.startTime = sTime.UTC().UnixMilli()
+		ct.startTime = sTime.UTC().Unix()
 	}
 
 	if ct.EndTime == "" {
-		ct.endTime = MaxDate.UTC().UnixMilli()
+		ct.endTime = MaxDate.UTC().Unix()
 	} else {
 		eTime, err := time.ParseInLocation(time.DateTime, ct.EndTime, ct.timeZone)
 		if err != nil {
 			return fmt.Errorf(" EndTime `%s` TimeZone: %s error: %s", ct.EndTime, ct.TimeZoneName, err)
 		}
-		ct.endTime = eTime.UTC().UnixMilli()
+		ct.endTime = eTime.UTC().Unix()
 	}
 	//if dt.Jitter == 0 {
 	//	dt.Jitter = 1000
@@ -79,8 +79,8 @@ func (ct *CronTrigger) GetJitterTime() int64 {
 }
 
 // GetNextRunTime
-// previousFireTime   ms
-// now   ms
+// previousFireTime   s
+// now   s
 func (ct CronTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error) {
 	expr, err := cronexpr.Parse(ct.CronExpr)
 	if err != nil {
@@ -95,14 +95,14 @@ func (ct CronTrigger) GetNextRunTime(previousFireTime, now int64) (int64, error)
 	}
 
 	if now > ct.startTime {
-		nextRunTime = expr.Next(time.UnixMilli(now).In(ct.timeZone))
+		nextRunTime = expr.Next(time.Unix(now, 0).In(ct.timeZone))
 	} else {
 		nextRunTime = expr.Next(ct.startTimet)
 	}
 
-	if ct.endTime < nextRunTime.UnixMilli() {
+	if ct.endTime < nextRunTime.Unix() {
 		return 0, nil
 	}
 
-	return nextRunTime.UTC().UnixMilli(), nil
+	return nextRunTime.UTC().Unix(), nil
 }

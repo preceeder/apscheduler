@@ -323,7 +323,7 @@ func (s *Scheduler) PauseJobByStoreName(id string, storeName string) (job.Job, e
 	}
 
 	j.Status = job.STATUS_PAUSED
-	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().UnixMilli()
+	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().Unix()
 	j.NextRunTime = now
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {
@@ -343,7 +343,7 @@ func (s *Scheduler) PauseJob(id string) (job.Job, error) {
 		return job.Job{}, err
 	}
 	j.Status = job.STATUS_PAUSED
-	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().UnixMilli()
+	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().Unix()
 	j.NextRunTime = now
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {
@@ -367,7 +367,7 @@ func (s *Scheduler) ResumeJobByStoreName(id string, storeName string) (job.Job, 
 	}
 
 	j.Status = job.STATUS_RUNNING
-	now := time.Now().UTC().UnixMilli()
+	now := time.Now().UTC().Unix()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {
@@ -388,7 +388,7 @@ func (s *Scheduler) ResumeJob(id string) (job.Job, error) {
 	}
 
 	j.Status = job.STATUS_RUNNING
-	now := time.Now().UTC().UnixMilli()
+	now := time.Now().UTC().Unix()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
 	j, err = s._updateJob(j, j.StoreName)
 	if err != nil {

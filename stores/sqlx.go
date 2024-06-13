@@ -20,7 +20,7 @@ import (
 	"github.com/preceeder/apscheduler/logs"
 )
 
-const TABLE_NAME = "go_jobs"
+var TABLE_NAME = "go_jobs"
 
 type MysqlConfig struct {
 	Host        string `json:"host"`

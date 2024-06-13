@@ -32,9 +32,9 @@ type Job struct {
 	// Arguments for `Func`.
 	Args map[string]any `json:"args"`
 	// The running timeout of `Func`.
-	// ms Default: 3600*1000
+	// ms Default: 3600 s
 	Timeout int64 `json:"timeout"`
-	// Automatic update, not manual setting.  ms
+	// Automatic update, not manual setting.  s
 	NextRunTime int64 `json:"next_run_time"`
 	// Optional: `STATUS_RUNNING` | `STATUS_PAUSED`
 	// It should not be set manually.
@@ -62,7 +62,7 @@ func (j *Job) Init() error {
 	}
 
 	if j.Timeout == 0 {
-		j.Timeout = 3600 * 1000
+		j.Timeout = 3600
 	}
 
 	err := j.Trigger.Init()
@@ -70,7 +70,7 @@ func (j *Job) Init() error {
 		return err
 	}
 
-	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().UnixMilli())
+	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().Unix())
 	if err != nil {
 		return err
 	}
@@ -129,7 +129,7 @@ func (j Job) String() string {
 }
 
 type FuncInfo struct {
-	Func        func(context.Context, Job)
+	Func        func(context.Context, Job) any
 	Name        string // 全局唯一函数标志
 	Description string // 函数描述
 }

@@ -20,6 +20,7 @@ type EventInfo struct {
 	Store     *stores.Store
 	Error     error
 	Msg       string
+	Result    any // 执行的结果
 }
 
 var EventChan chan EventInfo = make(chan EventInfo, 100)
