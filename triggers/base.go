@@ -16,8 +16,8 @@ import (
 	"time"
 )
 
-// MaxDate 不能太大,  time.Duration 最大只能表示290年
-var MaxDate = time.Now().Add(time.Hour * 24 * 365).UTC()
+// MaxDate 不能太大,  time.Duration 最大只能表示290年   默认值启动时间到当前时间距离100年
+var MaxDate = time.Now().Add(time.Hour * 24 * 365 * 100).UTC()
 
 // DefaultTimeZone 世界时区共有 26个 UTC-12 ~ UTC+14
 // DefaultTimeZone UTC+9:30
