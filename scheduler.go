@@ -287,6 +287,7 @@ func (s *Scheduler) run(ctx context.Context) {
 			}
 			ct := context.Background()
 			wg := sync.WaitGroup{}
+			var lockIds = make([]string, 0)
 			for _, j := range js {
 				if j.NextRunTime <= nowi {
 					nextRunTime, isExpire, err := j.NextRunTimeHandler(nowi)
@@ -306,6 +307,7 @@ func (s *Scheduler) run(ctx context.Context) {
 							logs.DefaultLog.Info(ct, "other process running", "jobId", j.Id)
 							continue
 						}
+						lockIds = append(lockIds, j.Id)
 					}
 
 					if isExpire {
@@ -340,19 +342,26 @@ func (s *Scheduler) run(ctx context.Context) {
 						logs.DefaultLog.Error(ct, "", "pool submit _flushJob", "error", err.Error(), "job", j)
 					}
 					logs.DefaultLog.Info(ct, "", "jobId", j.Id, "next_run_time", time.Unix(j.NextRunTime, 0).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
-					// 解锁
-					if s.useDistributed {
-						err = s.ReleaseLock(ct, j.Id)
-						if err != nil {
-							logs.DefaultLog.Error(ct, "redis lock release failed", "error", err.Error())
-						}
-					}
+					//// 解锁
+					//if s.useDistributed {
+					//	err = s.ReleaseLock(ct, j.Id)
+					//	if err != nil {
+					//		logs.DefaultLog.Error(ct, "redis lock release failed", "error", err.Error())
+					//	}
+					//}
 				} else {
 					break
 				}
 			}
 			// wait job update completed
 			wg.Wait()
+			// 全部更新完成 在解锁
+			if len(lockIds) > 0 {
+				err = s.ReleaseLock(ct, lockIds...)
+				if err != nil {
+					logs.DefaultLog.Error(ct, "redis lock release failed", "error", err.Error())
+				}
+			}
 			s.jobChangeChan <- struct{}{}
 		case <-ctx.Done():
 			logs.DefaultLog.Info(context.Background(), "Scheduler quit.")
@@ -464,7 +473,10 @@ func (s *Scheduler) GetLock(ctx context.Context, jobId string) (bool, error) {
 	return res, nil
 }
 
-func (s *Scheduler) ReleaseLock(ctx context.Context, jobId string) error {
-	lockKey := strings.Join([]string{s.lockPrefix, jobId}, ":")
-	return s.redisClient.Del(ctx, lockKey).Err()
+func (s *Scheduler) ReleaseLock(ctx context.Context, jobId ...string) error {
+	lockKeys := make([]string, 0)
+	for _, jd := range jobId {
+		lockKeys = append(lockKeys, strings.Join([]string{s.lockPrefix, jd}, ":"))
+	}
+	return s.redisClient.Del(ctx, lockKeys...).Err()
 }
