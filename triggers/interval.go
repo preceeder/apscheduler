@@ -100,8 +100,8 @@ func (it *IntervalTrigger) GetNextRunTime(previousFireTime, now int64) (int64, e
 	} else if it.startTime > now {
 		nextRunTime = it.startTime
 	} else {
-		timediffDuration := now - it.startTime
-		nextIntervalNum := int64(math.Ceil(float64(timediffDuration / it.Interval)))
+		var timediffDuration float64 = float64(now - it.startTime)
+		nextIntervalNum := int64(math.Ceil(timediffDuration / float64(it.Interval)))
 		nextRunTime = it.startTime + (it.Interval * nextIntervalNum)
 	}
 

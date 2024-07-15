@@ -70,7 +70,7 @@ type Scheduler struct {
 	cancel         context.CancelFunc
 	pool           *ants.Pool    // 默认10000,   会被 执行job 和 update job 平分
 	redisClient    *redis.Client // 用于分布式锁
-	lockPrefix     string        // 分布式锁前缀 默认: go-apscheduler-lock
+	lockPrefix     string        // 分布式锁前缀 默认: go.apscheduler.lock
 	useDistributed bool          // 启用分布式
 }
 
