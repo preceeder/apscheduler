@@ -180,17 +180,22 @@ func (s *Scheduler) DeleteAllJobs() (err error) {
 }
 
 func (s *Scheduler) _deleteJob(id string, storeName string) (err error) {
+	var j job.Job = job.Job{
+		Id: id, StoreName: storeName,
+	}
 	defer func() {
 		events.EventChan <- events.EventInfo{
 			EventCode: events.EVENT_JOB_REMOVED,
-			Job:       &job.Job{Id: id, StoreName: storeName},
+			Job:       &j,
 			Error:     err,
 		}
 	}()
 	logs.DefaultLog.Info(context.Background(), "delete job", "jobId", id)
 
-	if _, err = s.QueryJobByStoreName(id, storeName); err != nil {
+	if jb, err := s.QueryJobByStoreName(id, storeName); err != nil {
 		return err
+	}else{
+		j = jb
 	}
 	store, err := s.getStore(storeName)
 	if err != nil {
