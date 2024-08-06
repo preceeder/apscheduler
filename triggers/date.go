@@ -35,7 +35,7 @@ func (dt *DateTrigger) Init() error {
 		return err
 	}
 
-	rt, err := time.ParseInLocation(dt.RunDate, time.DateTime, dt.timeZone)
+	rt, err := time.ParseInLocation(time.DateTime, dt.RunDate, dt.timeZone)
 	if err != nil {
 		return err
 	}
