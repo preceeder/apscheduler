@@ -20,9 +20,9 @@ func BenchmarkTestNewSlog(b *testing.B) {
 
 	//for j <= b.N {
 	//	j++
-	//		DefaultLog.Info(context.Background(), "sds")
-	//		DefaultLog.Info(context.Background(), "sds")
-	//	//	DefaultLog.Info(context.Background(), "sds")
+	//		DefaultLog.Info(apsContext.Background(), "sds")
+	//		DefaultLog.Info(apsContext.Background(), "sds")
+	//	//	DefaultLog.Info(apsContext.Background(), "sds")
 	//}
 
 }

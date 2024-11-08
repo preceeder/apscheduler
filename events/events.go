@@ -8,6 +8,7 @@ package events
 
 import (
 	"context"
+	"github.com/preceeder/apscheduler/apsContext"
 	"github.com/preceeder/apscheduler/job"
 	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/stores"
@@ -15,6 +16,7 @@ import (
 )
 
 type EventInfo struct {
+	Ctx       apsContext.Context
 	EventCode Event
 	Job       *job.Job
 	Store     *stores.Store
@@ -35,8 +37,10 @@ const (
 	EVENT_JOB_REMOVED      Event = 1 << iota
 	EVENT_JOB_MODIFIED     Event = 1 << iota
 	EVENT_JOB_EXECUTED     Event = 1 << iota
+	EVENT_JOB_OVER         Event = 1 << iota
 	EVENT_JOB_ERROR        Event = 1 << iota
 	EVENT_JOB_MISSED       Event = 1 << iota
+	EVENT_MAX_INSTANCE     Event = 1 << iota
 )
 
 type EventFunc func(ei EventInfo)

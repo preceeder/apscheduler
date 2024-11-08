@@ -11,15 +11,16 @@ import (
 	"errors"
 	"fmt"
 	"github.com/panjf2000/ants/v2"
+	"github.com/preceeder/apscheduler/apsContext"
 	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
+	"github.com/preceeder/apscheduler/lock"
 	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/triggers"
-	"github.com/redis/go-redis/v9"
+	"github.com/preceeder/apscheduler/try"
 	"os"
 	"reflect"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -66,12 +67,11 @@ type Scheduler struct {
 	isRunning bool
 	mutexS    sync.RWMutex
 	// Input is received when `stop` is called
-	ctx            context.Context
-	cancel         context.CancelFunc
-	pool           *ants.Pool    // 默认10000,   会被 执行job 和 update job 平分
-	redisClient    *redis.Client // 用于分布式锁
-	lockPrefix     string        // 分布式锁前缀 默认: go.apscheduler.lock
-	useDistributed bool          // 启用分布式
+	ctx         context.Context
+	cancel      context.CancelFunc
+	pool        *ants.Pool // 默认10000,   会被 执行job 和 update job 平分
+	distributed lock.Lock  // 启用分布式
+
 }
 
 // NewScheduler 默认创建一个 MemoryStore
@@ -80,7 +80,7 @@ func NewScheduler() *Scheduler {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	events.StartEventsListen(ctx)
-	pool, err := ants.NewPool(10000, ants.WithNonblocking(true))
+	pool, err := ants.NewPool(1000, ants.WithNonblocking(true))
 	if err != nil {
 		fmt.Println("init pool failed", "error", err.Error())
 		os.Exit(1)
@@ -92,15 +92,16 @@ func NewScheduler() *Scheduler {
 		instances: Instance[int]{
 			Instances: sync.Map{},
 		},
-		ctx:    ctx,
-		cancel: cancel,
-		pool:   pool,
+		distributed: nil,
+		ctx:         ctx,
+		cancel:      cancel,
+		pool:        pool,
 	}
 }
 
 func (s *Scheduler) IsRunning() bool {
-	s.mutexS.RLock()
-	defer s.mutexS.RUnlock()
+	//s.mutexS.RLock()
+	//defer s.mutexS.RUnlock()
 
 	return s.isRunning
 }
@@ -124,14 +125,8 @@ func (s *Scheduler) SetStore(name string, sto stores.Store) (err error) {
 }
 
 // 配置分布式锁
-func (s *Scheduler) SetDistributed(r *redis.Client, lockPrefix string) {
-	s.redisClient = r
-	s.lockPrefix = lockPrefix
-	if lockPrefix == "" {
-		s.lockPrefix = "go.apscheduler.lock"
-	}
-	s.useDistributed = true
-
+func (s *Scheduler) SetDistributed(lk lock.Lock) {
+	s.distributed = lk
 }
 
 // RemoveStore remove store
@@ -175,31 +170,29 @@ func (s *Scheduler) GetAllStoreName() []string {
 	return storeNames
 }
 
-func (s *Scheduler) _runJob(j job.Job) {
+func (s *Scheduler) _runJob(ctx apsContext.Context, j job.Job) {
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Println("hahaahah")
-			logs.DefaultLog.Error(context.Background(), fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
-			//logs.DefaultLog.Debug(context.Background(), fmt.Sprintf("%s", string(debug.Stack())))
+			logs.DefaultLog.Error(ctx, fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
 		}
 	}()
 	f := reflect.ValueOf(job.FuncMap[j.FuncName].Func)
 	if f.IsNil() {
 		msg := fmt.Sprintf("Job `%s` Func `%s` unregistered", j.Name, j.FuncName)
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_JOB_ERROR,
 			Job:       &j,
 			Error:     errors.New(msg),
 		}
-		logs.DefaultLog.Warn(context.Background(), msg)
+		logs.DefaultLog.Warn(ctx, msg)
 	} else {
-		logs.DefaultLog.Info(context.Background(), fmt.Sprintf("Job `%s` is running, at time: `%s`", j.Name, time.Unix(j.NextRunTime, 0).Format(time.RFC3339Nano)))
 		s.instances.Add(j.Id, 1)
 		defer func() {
 			s.instances.Sub(j.Id, 1)
 		}()
 
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(j.Timeout))
+		ctt, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(j.Timeout))
 		defer cancel()
 
 		ch := make(chan error, 1)
@@ -208,15 +201,16 @@ func (s *Scheduler) _runJob(j job.Job) {
 			defer close(ch)
 			defer func() {
 				if err := recover(); err != nil {
-					logs.DefaultLog.Error(context.Background(), fmt.Sprintf("Job `%s` run error: %s", j.Name, err))
-					logs.DefaultLog.Debug(context.Background(), fmt.Sprintf("%s", string(debug.Stack())))
+					logs.DefaultLog.Error(ctx, fmt.Sprintf("Job `%s` run error: %s", j.Name, try.PrintStackTrace(err)))
 					events.EventChan <- events.EventInfo{
+						Ctx:       ctx,
 						EventCode: events.EVENT_JOB_ERROR,
 						Job:       &j,
 						Error:     err.(error),
 					}
 				} else {
 					events.EventChan <- events.EventInfo{
+						Ctx:       ctx,
 						EventCode: events.EVENT_JOB_EXECUTED,
 						Job:       &j,
 						Result:    result,
@@ -233,42 +227,50 @@ func (s *Scheduler) _runJob(j job.Job) {
 		select {
 		case <-ch:
 			return
-		case <-ctx.Done():
-			err := fmt.Sprintf("Job `%s` run timeout", j.Name)
-			logs.DefaultLog.Warn(context.Background(), err)
+		case <-ctt.Done():
+			err := fmt.Sprintf("Job `%s` run timeout", j.Id)
+			logs.DefaultLog.Warn(ctx, err)
 
 			events.EventChan <- events.EventInfo{
+				Ctx:       ctx,
 				EventCode: events.EVENT_JOB_ERROR,
 				Job:       &j,
 				Error:     errors.New(err),
 			}
 		}
-
 	}
 }
 
-func (s *Scheduler) _flushJob(j job.Job, wg *sync.WaitGroup) func() {
+func (s *Scheduler) _flushJob(ctx apsContext.Context, j job.Job, lockValue string) func() {
 	return func() {
-		defer wg.Done()
+		//defer wg.Done()
+		defer func() {
+			if s.distributed != nil {
+				err := s.distributed.ReleaseLock(ctx, j.Id, lockValue)
+				if err != nil {
+					logs.DefaultLog.Error(ctx, "redis lock release failed", "error", err.Error())
+				}
+			}
+		}()
+		// 在这里还需要再次检查任务是否有其他并发问题
 		if j.NextRunTime == 0 {
-			if err := s._deleteJob(j.Id, j.StoreName); err != nil {
-				logs.DefaultLog.Error(context.Background(), fmt.Errorf("Scheduler delete job `%s` error: %s", j.Id, err).Error())
+			if err := s._deleteJob(ctx, j.Id, j.StoreName); err != nil {
+				logs.DefaultLog.Error(ctx, fmt.Errorf("Scheduler delete job `%s` error: %s", j.Id, err).Error())
 				return
 			}
 		} else {
-			if _, err := s._updateJob(j, j.StoreName); err != nil {
-				logs.DefaultLog.Error(context.Background(), fmt.Errorf("Scheduler update job `%s` error: %s", j.Id, err).Error())
+			if _, err := s._updateJob(ctx, j, j.StoreName, false); err != nil {
+				logs.DefaultLog.Error(ctx, fmt.Errorf("Scheduler update job `%s` error: %s", j.Id, err).Error())
 				return
 			}
 		}
 		return
 	}
-
 }
 
-func (s *Scheduler) _scheduleJob(j job.Job) func() {
+func (s *Scheduler) _scheduleJob(ctx apsContext.Context, j job.Job) func() {
 	return func() {
-		s._runJob(j)
+		s._runJob(ctx, j)
 	}
 }
 
@@ -277,91 +279,86 @@ func (s *Scheduler) run(ctx context.Context) {
 	for {
 		select {
 		case <-s.timer.C:
+			ct := apsContext.NewContext()
+
 			now := time.Now().UTC()
 			nowi := now.Unix()
 			js, err := s.GetDueJos(nowi)
 			if err != nil {
-				logs.DefaultLog.Error(context.Background(), fmt.Sprintf("Scheduler get due jobs error: %s", err))
+				logs.DefaultLog.Error(ct, fmt.Sprintf("Scheduler get due jobs error: %s", err))
 				s.timer.Reset(time.Second)
 				continue
 			}
-			ct := context.Background()
-			wg := sync.WaitGroup{}
-			var lockIds = make([]string, 0)
+			//wg := sync.WaitGroup{}
 			for _, j := range js {
+				var lockValue string = ""
+				var lk = false
+				taskCtx := apsContext.NewContext()
+
 				if j.NextRunTime <= nowi {
-					nextRunTime, isExpire, err := j.NextRunTimeHandler(nowi)
+					// 枷锁
+					if s.distributed != nil {
+						lk, err, lockValue = s.distributed.GetLock(taskCtx, j.Id)
+						if err != nil {
+							logs.DefaultLog.Error(taskCtx, "redis lock get failed", "error", err.Error())
+							continue
+						}
+						if !lk {
+							logs.DefaultLog.Info(taskCtx, "other process running", "jobId", j.Id)
+							continue
+						}
+						//lockIds = append(lockIds, j.Id)
+					}
+
+					nextRunTime, isExpire, err := j.NextRunTimeHandler(taskCtx, nowi)
 					if err != nil {
-						logs.DefaultLog.Error(ct, fmt.Sprintf("Scheduler calc next run time error: %s", err))
+						logs.DefaultLog.Error(taskCtx, fmt.Sprintf("Scheduler calc next run time error: %s", err))
 						continue
 					}
+					oldRunTime := j.NextRunTime
+					j.NextRunTime = nextRunTime
+					logs.DefaultLog.Info(taskCtx, "", "jobId", j.Id, "runTime", time.Unix(oldRunTime, 0).Format(time.RFC3339Nano), "next_run_time", time.Unix(j.NextRunTime, 0).Format(time.RFC3339Nano))
 
-					// 枷锁
-					if s.useDistributed {
-						lock, err := s.GetLock(ct, j.Id)
-						if err != nil {
-							logs.DefaultLog.Error(ct, "redis lock get failed", "error", err.Error())
-							continue
-						}
-						if !lock {
-							logs.DefaultLog.Info(ct, "other process running", "jobId", j.Id)
-							continue
-						}
-						lockIds = append(lockIds, j.Id)
-					}
-
+					// 更新任务会耗时 几十ms, 对其他任务有影响
+					//wg.Add(1)
+					// 先一步更新， 对于后续的 在任务重更新就没啥问题了
+					//err = s.pool.Submit(s._flushJob(taskCtx, j, lockValue))
+					//if err != nil {
+					//	logs.DefaultLog.Error(taskCtx, "", "pool submit _flushJob", "error", err.Error(), "job", j)
+					//}
+					s._flushJob(taskCtx, j, lockValue)()
 					if isExpire {
 						// job 本次不执行
 						events.EventChan <- events.EventInfo{
+							Ctx:       taskCtx,
 							EventCode: events.EVENT_JOB_MISSED,
 							Job:       &j,
-							Error:     errors.New("过期"),
+							Error:     errors.New(fmt.Sprintf("过期, Jitter:%s", j.Trigger.GetJitterTime())),
 						}
-						logs.DefaultLog.Info(ct, "job expire jump this exec", "jobId", j.Id)
-
-					} else if s.instances.Get(j.Id) >= j.MaxInstance {
+						logs.DefaultLog.Info(taskCtx, "job expire jump this exec", "jobId", j.Id)
+					} else if currentInstance := s.instances.Get(j.Id); currentInstance >= j.MaxInstance {
 						// job 本次不执行
 						events.EventChan <- events.EventInfo{
-							EventCode: events.EVENT_JOB_MISSED,
+							Ctx:       taskCtx,
+							EventCode: events.EVENT_MAX_INSTANCE,
 							Job:       &j,
-							Error:     errors.New("执行的任务数量超限"),
+							Error:     errors.New(fmt.Sprintf("执行的任务数量超限, currentInstance: %d, jobMaxInstance: %d", currentInstance, j.MaxInstance)),
 						}
-						logs.DefaultLog.Info(ct, "job max instance jump this exec", "jobId", j.Id)
+						logs.DefaultLog.Info(taskCtx, "job max instance jump this exec", "jobId", j.Id)
 					} else {
-						err := s.pool.Submit(s._scheduleJob(j))
+						err := s.pool.Submit(s._scheduleJob(taskCtx, j))
 						if err != nil {
-							logs.DefaultLog.Error(ct, "pool submit _scheduleJob", "error", err.Error(), "job", j)
+							logs.DefaultLog.Error(taskCtx, "pool submit _scheduleJob", "error", err.Error(), "job", j)
 						}
+						//logs.DefaultLog.Info(taskCtx, fmt.Sprintf("Job `%s` is running, at time: `%s`", j.Name, time.Unix(j.NextRunTime, 0).Format(time.RFC3339Nano)))
 					}
 
-					j.NextRunTime = nextRunTime
-					// 更新任务会耗时 几十ms, 对其他任务有影响
-					wg.Add(1)
-					err = s.pool.Submit(s._flushJob(j, &wg))
-					if err != nil {
-						logs.DefaultLog.Error(ct, "", "pool submit _flushJob", "error", err.Error(), "job", j)
-					}
-					logs.DefaultLog.Info(ct, "", "jobId", j.Id, "next_run_time", time.Unix(j.NextRunTime, 0).Format(time.RFC3339Nano), "timestamp", j.NextRunTime)
-					//// 解锁
-					//if s.useDistributed {
-					//	err = s.ReleaseLock(ct, j.Id)
-					//	if err != nil {
-					//		logs.DefaultLog.Error(ct, "redis lock release failed", "error", err.Error())
-					//	}
-					//}
 				} else {
 					break
 				}
 			}
 			// wait job update completed
-			wg.Wait()
-			// 全部更新完成 在解锁
-			if len(lockIds) > 0 {
-				err = s.ReleaseLock(ct, lockIds...)
-				if err != nil {
-					logs.DefaultLog.Error(ct, "redis lock release failed", "error", err.Error())
-				}
-			}
+			//wg.Wait()
 			s.jobChangeChan <- struct{}{}
 		case <-ctx.Done():
 			logs.DefaultLog.Info(context.Background(), "Scheduler quit.")
@@ -403,8 +400,8 @@ func (s *Scheduler) GetDueJos(timestamp int64) ([]job.Job, error) {
 
 // Start scheduler 开启运行
 func (s *Scheduler) Start() {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
 
 	if s.isRunning {
 		logs.DefaultLog.Info(context.Background(), "Scheduler is running.")
@@ -422,8 +419,8 @@ func (s *Scheduler) Start() {
 
 // Stop 停止scheduler
 func (s *Scheduler) Stop() {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
 	defer s.pool.Release()
 
 	if !s.isRunning {
@@ -460,23 +457,4 @@ func (s *Scheduler) getNextWakeupInterval() (time.Duration, bool) {
 	}
 
 	return time.Duration(nextWakeupInterval) * time.Second, true
-}
-
-func (s *Scheduler) GetLock(ctx context.Context, jobId string) (bool, error) {
-	// exp  ms
-	lockKey := strings.Join([]string{s.lockPrefix, jobId}, ":")
-	res, err := s.redisClient.SetNX(ctx, lockKey, 1, time.Second*2).Result()
-	if err != nil {
-		logs.DefaultLog.Error(ctx, "redisDb 加锁失败", "key", jobId, "error", err.Error())
-		return false, err
-	}
-	return res, nil
-}
-
-func (s *Scheduler) ReleaseLock(ctx context.Context, jobId ...string) error {
-	lockKeys := make([]string, 0)
-	for _, jd := range jobId {
-		lockKeys = append(lockKeys, strings.Join([]string{s.lockPrefix, jd}, ":"))
-	}
-	return s.redisClient.Del(ctx, lockKeys...).Err()
 }

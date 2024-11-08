@@ -7,7 +7,6 @@
 package triggers
 
 import (
-	"encoding/gob"
 	"errors"
 	"fmt"
 	"regexp"
@@ -31,10 +30,6 @@ type Trigger interface {
 }
 
 func init() {
-	gob.Register(&IntervalTrigger{})
-	gob.Register(&DateTrigger{})
-	gob.Register(&CronTrigger{})
-	gob.Register(&time.Location{})
 
 }
 

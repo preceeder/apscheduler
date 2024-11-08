@@ -7,9 +7,9 @@
 package apscheduler
 
 import (
-	"context"
 	"errors"
 	"fmt"
+	"github.com/preceeder/apscheduler/apsContext"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
@@ -21,15 +21,15 @@ import (
 
 func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 	var err error
+	ctx := apsContext.NewContext()
 	defer func() {
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_JOB_ADDED,
 			Job:       &j,
 			Error:     err,
 		}
 	}()
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
 
 	if j.Id == "" {
 		err = apsError.JobIdError("is can not empty")
@@ -39,7 +39,7 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 		return job.Job{}, err
 	}
 
-	logs.DefaultLog.Info(context.Background(), fmt.Sprintf("Scheduler add job `%s`.", j.Name))
+	logs.DefaultLog.Info(ctx, fmt.Sprintf("Scheduler add job `%s`.", j.Name))
 	// 要查询一下 所有的 存储器里有没有一样的任务id
 	var jobExists bool
 	// 检查任务是否已存在
@@ -65,11 +65,11 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 	if jobExists {
 		// 存在且  任务可以更新
 		if j.Replace {
-			js, err := s._updateJob(j, j.StoreName)
+			js, err := s._updateJob(ctx, j, j.StoreName, true)
 			if err != nil {
 				return js, err
 			}
-			logs.DefaultLog.Info(context.Background(), "add job to update", "job", j)
+			logs.DefaultLog.Info(ctx, "add job to update", "job", j)
 		} else {
 			err = apsError.JobExistsError(fmt.Sprintf("%s exists %s, can't update", j.Id, j.StoreName))
 			return j, err
@@ -82,7 +82,7 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 		if err = store.AddJob(j); err != nil {
 			return j, err
 		}
-		logs.DefaultLog.Info(context.Background(), "add job", "job", j)
+		logs.DefaultLog.Info(ctx, "add job", "job", j)
 	}
 
 	if s.isRunning {
@@ -94,9 +94,10 @@ func (s *Scheduler) AddJob(j job.Job) (job.Job, error) {
 // 删除job
 
 func (s *Scheduler) DeleteJobByStoreName(id string, storeName string) (err error) {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	err = s._deleteJob(id, storeName)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	ctx := apsContext.NewContext()
+	err = s._deleteJob(ctx, id, storeName)
 	if err != nil {
 		return err
 	}
@@ -105,18 +106,19 @@ func (s *Scheduler) DeleteJobByStoreName(id string, storeName string) (err error
 }
 
 func (s *Scheduler) DeleteJob(id string) error {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
 	defer func() {
 		s.jobChangeChan <- struct{}{}
 	}()
-
-	logs.DefaultLog.Info(context.Background(), "delete job", "jobId", id)
+	ctx := apsContext.NewContext()
+	logs.DefaultLog.Info(ctx, "delete job", "jobId", id)
 
 	for _, store := range s.store {
 		if jb, err := store.GetJob(id); err == nil {
 			err = store.DeleteJob(id)
 			events.EventChan <- events.EventInfo{
+				Ctx:       ctx,
 				EventCode: events.EVENT_JOB_REMOVED,
 				Job:       &jb,
 				Error:     err,
@@ -129,17 +131,19 @@ func (s *Scheduler) DeleteJob(id string) error {
 
 // DeleteJobsByStoreName 删除指定store 下所有的job
 func (s *Scheduler) DeleteJobsByStoreName(storeName string) (err error) {
+	ctx := apsContext.NewContext()
 	defer func() {
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_ALL_JOBS_REMOVED,
 			Error:     err,
 			Msg:       storeName,
 		}
 	}()
 
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "delete all jobs.", "storeName", storeName)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	logs.DefaultLog.Info(ctx, "delete all jobs.", "storeName", storeName)
 
 	store, err := s.getStore(storeName)
 	if err != nil {
@@ -154,17 +158,19 @@ func (s *Scheduler) DeleteJobsByStoreName(storeName string) (err error) {
 
 func (s *Scheduler) DeleteAllJobs() (err error) {
 	var storeNames string
+	ctx := apsContext.NewContext()
 	defer func() {
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_ALL_JOBS_REMOVED,
 			Error:     err,
 			Msg:       storeNames,
 		}
 	}()
 
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "delete all jobs.")
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	logs.DefaultLog.Info(ctx, "delete all jobs.")
 
 	errs := make([]error, 0)
 	var storeNameSlice = make([]string, 0)
@@ -179,22 +185,23 @@ func (s *Scheduler) DeleteAllJobs() (err error) {
 	return
 }
 
-func (s *Scheduler) _deleteJob(id string, storeName string) (err error) {
+func (s *Scheduler) _deleteJob(ctx apsContext.Context, id string, storeName string) (err error) {
 	var j job.Job = job.Job{
 		Id: id, StoreName: storeName,
 	}
 	defer func() {
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_JOB_REMOVED,
 			Job:       &j,
 			Error:     err,
 		}
 	}()
-	logs.DefaultLog.Info(context.Background(), "delete job", "jobId", id)
+	logs.DefaultLog.Info(ctx, "delete job", "jobId", id)
 
 	if jb, err := s.QueryJobByStoreName(id, storeName); err != nil {
 		return err
-	}else{
+	} else {
 		j = jb
 	}
 	store, err := s.getStore(storeName)
@@ -235,7 +242,6 @@ func (s *Scheduler) GetJobsByStoreName(storeName string) ([]job.Job, error) {
 	} else {
 		return jb, nil
 	}
-
 }
 
 func (s *Scheduler) GetAllJobs() ([]job.Job, error) {
@@ -251,26 +257,28 @@ func (s *Scheduler) GetAllJobs() ([]job.Job, error) {
 	return jobs, errors.Join(errs...)
 }
 
-// UpdateJob [job.Id, job.StoreName] 不能修改, 要修改job 可以线getJob, 然后update
+// UpdateJob [job.Id, job.StoreName] 不能修改, 要修改job 可以先getJob, 然后update
 // 可以将 job换到新的store中, 当oldJobStoreName 和 j.StoreName 不一样的时候 更新后会删除旧store中的job
 // oldJobStoreName string 旧job 存储的store name,
 func (s *Scheduler) UpdateJob(j job.Job, oldJobStoreName string) (job.Job, error) {
 	var err error
+	ctx := apsContext.NewContext()
 	defer func() {
 		events.EventChan <- events.EventInfo{
+			Ctx:       ctx,
 			EventCode: events.EVENT_JOB_MODIFIED,
 			Job:       &j,
 			Error:     err,
 		}
 	}()
 
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
 	err = j.Init()
 	if err != nil {
 		return j, err
 	}
-	js, err := s._updateJob(j, oldJobStoreName)
+	js, err := s._updateJob(ctx, j, oldJobStoreName, true)
 	if err != nil {
 		return js, err
 	}
@@ -281,7 +289,7 @@ func (s *Scheduler) UpdateJob(j job.Job, oldJobStoreName string) (job.Job, error
 // _updateJob 更新 job
 // j 最新的job数据
 // oldJobStoreName job之前存在的 store
-func (s *Scheduler) _updateJob(j job.Job, oldJobStoreName string) (job.Job, error) {
+func (s *Scheduler) _updateJob(ctx apsContext.Context, j job.Job, oldJobStoreName string, forceUpdate bool) (job.Job, error) {
 	// 如果让用户自己操作  就可以更加灵活
 	oJ, err := s.QueryJobByStoreName(j.Id, oldJobStoreName)
 	if err != nil {
@@ -296,6 +304,12 @@ func (s *Scheduler) _updateJob(j job.Job, oldJobStoreName string) (job.Job, erro
 	if err = j.Check(); err != nil {
 		return job.Job{}, err
 	}
+
+	// 这里是防止在获取到任务后，更新任务之前 有外部操作更新了任务导致，本次更新覆盖之前的有效更新
+	if forceUpdate == false && oJ.HashValue != "" && oJ.HashValue != j.HashValue {
+		return job.Job{}, errors.New("old job hashValue has changed")
+	}
+
 	store, err := s.getStore(j.StoreName)
 	if err != nil {
 		return j, err
@@ -305,7 +319,7 @@ func (s *Scheduler) _updateJob(j job.Job, oldJobStoreName string) (job.Job, erro
 		return job.Job{}, err
 	}
 	if j.StoreName != oldJobStoreName {
-		err = s._deleteJob(j.Id, oldJobStoreName)
+		err = s._deleteJob(ctx, j.Id, oldJobStoreName)
 		if err != nil {
 			return job.Job{}, err
 		}
@@ -318,9 +332,10 @@ func (s *Scheduler) _updateJob(j job.Job, oldJobStoreName string) (job.Job, erro
 
 // PauseJobByStoreName 暂停指定store name 下的job
 func (s *Scheduler) PauseJobByStoreName(id string, storeName string) (job.Job, error) {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "pause job", "jobId", id)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	ctx := apsContext.NewContext()
+	logs.DefaultLog.Info(ctx, "pause job", "jobId", id)
 
 	j, err := s.QueryJobByStoreName(id, storeName)
 	if err != nil {
@@ -330,7 +345,7 @@ func (s *Scheduler) PauseJobByStoreName(id string, storeName string) (job.Job, e
 	j.Status = job.STATUS_PAUSED
 	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().Unix()
 	j.NextRunTime = now
-	j, err = s._updateJob(j, j.StoreName)
+	j, err = s._updateJob(ctx, j, j.StoreName, true)
 	if err != nil {
 		return job.Job{}, err
 	}
@@ -339,9 +354,10 @@ func (s *Scheduler) PauseJobByStoreName(id string, storeName string) (job.Job, e
 }
 
 func (s *Scheduler) PauseJob(id string) (job.Job, error) {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "pause job", "jobId", id)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	ctx := apsContext.NewContext()
+	logs.DefaultLog.Info(ctx, "pause job", "jobId", id)
 
 	j, _, err := s.queryJobById(id)
 	if err != nil {
@@ -350,7 +366,7 @@ func (s *Scheduler) PauseJob(id string) (job.Job, error) {
 	j.Status = job.STATUS_PAUSED
 	now := time.Now().Add(time.Hour * 24 * 365 * 100).UTC().Unix()
 	j.NextRunTime = now
-	j, err = s._updateJob(j, j.StoreName)
+	j, err = s._updateJob(ctx, j, j.StoreName, true)
 	if err != nil {
 		return job.Job{}, err
 	}
@@ -358,13 +374,14 @@ func (s *Scheduler) PauseJob(id string) (job.Job, error) {
 	return j, nil
 }
 
-// job 回复运行
-
 // ResumeJobByStoreName
+// job 恢复运行
 func (s *Scheduler) ResumeJobByStoreName(id string, storeName string) (job.Job, error) {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "Scheduler resume job", "jobId", id)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	ctx := apsContext.NewContext()
+
+	logs.DefaultLog.Info(ctx, "Scheduler resume job", "jobId", id)
 
 	j, err := s.QueryJobByStoreName(id, storeName)
 	if err != nil {
@@ -374,7 +391,7 @@ func (s *Scheduler) ResumeJobByStoreName(id string, storeName string) (job.Job, 
 	j.Status = job.STATUS_RUNNING
 	now := time.Now().UTC().Unix()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
-	j, err = s._updateJob(j, j.StoreName)
+	j, err = s._updateJob(ctx, j, j.StoreName, true)
 	if err != nil {
 		return job.Job{}, err
 	}
@@ -383,9 +400,11 @@ func (s *Scheduler) ResumeJobByStoreName(id string, storeName string) (job.Job, 
 }
 
 func (s *Scheduler) ResumeJob(id string) (job.Job, error) {
-	s.mutexS.Lock()
-	defer s.mutexS.Unlock()
-	logs.DefaultLog.Info(context.Background(), "Scheduler resume job", "jobId", id)
+	//s.mutexS.Lock()
+	//defer s.mutexS.Unlock()
+	ctx := apsContext.NewContext()
+
+	logs.DefaultLog.Info(ctx, "Scheduler resume job", "jobId", id)
 
 	j, _, err := s.queryJobById(id)
 	if err != nil {
@@ -395,7 +414,7 @@ func (s *Scheduler) ResumeJob(id string) (job.Job, error) {
 	j.Status = job.STATUS_RUNNING
 	now := time.Now().UTC().Unix()
 	j.NextRunTime, _ = j.Trigger.GetNextRunTime(0, now)
-	j, err = s._updateJob(j, j.StoreName)
+	j, err = s._updateJob(ctx, j, j.StoreName, true)
 	if err != nil {
 		return job.Job{}, err
 	}

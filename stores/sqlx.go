@@ -7,10 +7,8 @@
 package stores
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/gob"
 	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
@@ -18,6 +16,7 @@ import (
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
 	"github.com/preceeder/apscheduler/logs"
+	"github.com/preceeder/apscheduler/serialize"
 )
 
 var TABLE_NAME = "go_jobs"
@@ -211,25 +210,12 @@ func (s *MysqlStore) Clear() error {
 }
 
 func (s *MysqlStore) StateDump(j job.Job) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(j)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return serialize.DefaultSerialize.StateDump(j)
 }
 
 // Deserialize Bytes and convert to Job
 func (s *MysqlStore) StateLoad(state []byte) (job.Job, error) {
-	var j job.Job
-	buf := bytes.NewBuffer(state)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(&j)
-	if err != nil {
-		return job.Job{}, err
-	}
-	return j, nil
+	return serialize.DefaultSerialize.StateLoad(state)
 }
 
 // 参数解析

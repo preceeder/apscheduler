@@ -22,7 +22,6 @@ func CatchException(handle func(err any)) {
 
 // RecordPrefix 需要 更具自己的项目, 加上项目的 module name;  不然捕获的错误信息里就不会包含自己项目的信息
 // example: 自己项目的module 名是 match; 那么就需要  try.RecordPrefix = append(try.RecordPrefix, "apscheduler")
-var RecordPrefix = []string{"apscheduler"}
 
 // PrintStackTrace 打印全部堆栈信息
 func PrintStackTrace(err any) string {
@@ -31,18 +30,12 @@ func PrintStackTrace(err any) string {
 		fmt.Fprintf(buf, "%v \n ", err)
 	}
 	for i := 1; true; i++ {
-		pc, file, line, ok := runtime.Caller(i)
+		_, file, line, ok := runtime.Caller(i)
 		if !ok {
 			fmt.Fprintf(buf, "%s:%d \n ", file, line)
 			break
 		} else {
-			prevFunc := runtime.FuncForPC(pc).Name()
-			for _, prefix := range RecordPrefix {
-				if strings.HasPrefix(prevFunc, prefix) {
-					fmt.Fprintf(buf, "%s:%d \n ", file, line)
-					continue
-				}
-			}
+			fmt.Fprintf(buf, "%s:%d \n ", file, line)
 		}
 	}
 	return buf.String()
@@ -66,17 +59,12 @@ func GetStackTrace(funcName string, step int) string {
 				}
 				continue
 			}
-
-			for _, prefix := range RecordPrefix {
-				if strings.HasPrefix(prevFunc, prefix) {
-					if step > 0 {
-						fmt.Fprintf(buf, "%s:%d \n ", file, line)
-						step -= 1
-						continue
-					}
-					break
-				}
+			if step > 0 {
+				fmt.Fprintf(buf, "%s:%d \n ", file, line)
+				step -= 1
+				continue
 			}
+
 		}
 	}
 	return buf.String()

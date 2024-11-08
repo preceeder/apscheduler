@@ -12,6 +12,49 @@ import (
 	"time"
 )
 
+// CronTrigger
+// CronExpr
+// Field name     Mandatory?   Allowed values    Allowed special characters
+// ----------     ----------   --------------    --------------------------
+// Seconds        No           0-59              * / , -
+// Minutes        Yes          0-59              * / , -
+// Hours          Yes          0-23              * / , -
+// Day of month   Yes          1-31              * / , - L W
+// Month          Yes          1-12 or JAN-DEC   * / , -
+// Day of week    Yes          0-6 or SUN-SAT    * / , - L #
+// Year           No           1970–2099         * / , -
+
+// Asterisk ( * )
+// The asterisk indicates that the cron expression matches for all values of the field. E.g., using an asterisk in the 4th field (month) indicates every month.
+//
+// Slash ( / )
+// Slashes describe increments of ranges. For example 3-59/15 in the minute field indicate the third minute of the hour and every 15 minutes thereafter. The form */... is equivalent to the form "first-last/...", that is, an increment over the largest possible range of the field.
+//
+// Comma ( , )
+// Commas are used to separate items of a list. For example, using MON,WED,FRI in the 5th field (day of week) means Mondays, Wednesdays and Fridays.
+//
+// Hyphen ( - )
+// Hyphens define ranges. For example, 2000-2010 indicates every year between 2000 and 2010 AD, inclusive.
+//
+// L
+// L stands for "last". When used in the day-of-week field, it allows you to specify constructs such as "the last Friday" (5L) of a given month. In the day-of-month field, it specifies the last day of the month.
+//
+// W
+// The W character is allowed for the day-of-month field. This character is used to specify the business day (Monday-Friday) nearest the given day. As an example, if you were to specify 15W as the value for the day-of-month field, the meaning is: "the nearest business day to the 15th of the month."
+//
+// So, if the 15th is a Saturday, the trigger fires on Friday the 14th. If the 15th is a Sunday, the trigger fires on Monday the 16th. If the 15th is a Tuesday, then it fires on Tuesday the 15th. However if you specify 1W as the value for day-of-month, and the 1st is a Saturday, the trigger fires on Monday the 3rd, as it does not 'jump' over the boundary of a month's days.
+//
+// The W character can be specified only when the day-of-month is a single day, not a range or list of days.
+//
+// The W character can also be combined with L, i.e. LW to mean "the last business day of the month."
+//
+// Hash ( # )
+// # is allowed for the day-of-week field, and must be followed by a number between one and five. It allows you to specify constructs such as "the second Friday" of a given month.
+
+//If only six fields are present, a 0 second field is prepended, that is, * * * * * 2013 internally become 0 * * * * * 2013.
+//If only five fields are present, a 0 second field is prepended and a wildcard year field is appended, that is, * * * * Mon internally become 0 * * * * Mon *.
+//Domain for day-of-week field is [0-7] instead of [0-6], 7 being Sunday (like 0). This to comply with http://linux.die.net/man/5/crontab#.
+//As of now, the behavior of the code is undetermined if a malformed cron expression is supplied
 type CronTrigger struct {
 	CronExpr     string `json:"cron_expr"`
 	TimeZoneName string `json:"utc_time_zone"` // 默认就是 UTC

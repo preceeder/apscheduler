@@ -10,9 +10,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/duke-git/lancet/v2/cryptor"
+	"github.com/preceeder/apscheduler/apsContext"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/logs"
 	"github.com/preceeder/apscheduler/triggers"
+	"reflect"
 	"time"
 )
 
@@ -25,14 +28,15 @@ type Job struct {
 	// 任务的唯一id.
 	Id string `json:"id"` // 一旦设置,不能修改
 	// job name
-	Name    string `json:"name"`
-	Trigger triggers.Trigger
+	Name        string           `json:"name"`
+	Trigger     triggers.Trigger `json:"trigger"`
+	TriggerName string           `json:"triggerName"` // 留给内部使用的
 	// 注册函数名
 	FuncName string `json:"func_name"` // 必须和注册的函数名一致
 	// Arguments for `Func`.
 	Args map[string]any `json:"args"`
 	// The running timeout of `Func`.
-	// ms Default: 3600 s
+	// ms Default: 20 s
 	Timeout int64 `json:"timeout"`
 	// Automatic update, not manual setting.  s
 	NextRunTime int64 `json:"next_run_time"`
@@ -43,6 +47,7 @@ type Job struct {
 	StoreName   string `json:"store_name"`   // 一旦设置,不能修改
 	Replace     bool   `json:"replace"`      // 任务存在是否更新 默认false
 	MaxInstance int    `json:"max_instance"` // 改任务可以同时存在的个数 最少1个, 默认 1
+	HashValue   string `json:"has_value"`    // 保存job本身 除NextRunTime 以外的 数据的has
 }
 
 // `sort.Interface`, sorted by 'NextRunTime', ascend.
@@ -62,14 +67,14 @@ func (j *Job) Init() error {
 	}
 
 	if j.Timeout == 0 {
-		j.Timeout = 3600
+		j.Timeout = 20 // 默认20秒
 	}
 
 	err := j.Trigger.Init()
 	if err != nil {
 		return err
 	}
-
+	j.TriggerName = reflect.TypeOf(j.Trigger).Elem().Name()
 	nextRunTime, err := j.Trigger.GetNextRunTime(0, time.Now().UTC().Unix())
 	if err != nil {
 		return err
@@ -77,11 +82,14 @@ func (j *Job) Init() error {
 	if nextRunTime == 0 {
 		return errors.New("endTime can't lt startTime")
 	}
-	j.NextRunTime = nextRunTime
 
 	if j.MaxInstance == 0 {
 		j.MaxInstance = 1
 	}
+	j.Has()
+
+	j.NextRunTime = nextRunTime
+
 	if err := j.Check(); err != nil {
 		return err
 	}
@@ -89,17 +97,22 @@ func (j *Job) Init() error {
 	return nil
 }
 
+func (j *Job) Has() {
+	j.NextRunTime = 0
+	jstr := j.String()
+	j.HashValue = cryptor.Md5String(jstr)
+}
+
 func (j *Job) Check() error {
 	// 检查任务函数是否存在
 	if _, ok := FuncMap[j.FuncName]; !ok {
 		return apsError.FuncUnregisteredError(j.FuncName)
 	}
-
 	return nil
 }
 
 // NextRunTimeHandler 下次执行时间处理, 知道处理为离now时间最短的下一次
-func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
+func (j *Job) NextRunTimeHandler(ctx apsContext.Context, nowi int64) (int64, bool, error) {
 	nextRunTIme := j.NextRunTime
 
 	var err error
@@ -114,7 +127,7 @@ func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
 	for nextRunTIme != 0 && nextRunTIme <= nowi {
 		nextRunTIme, err = j.Trigger.GetNextRunTime(nextRunTIme, nowi)
 		if err != nil {
-			logs.DefaultLog.Info(context.Background(), "NextRunTimeHandler", "job", j, "error", err.Error())
+			logs.DefaultLog.Info(ctx, "NextRunTimeHandler", "job", j, "error", err.Error())
 			break
 		}
 	}
@@ -123,7 +136,6 @@ func (j *Job) NextRunTimeHandler(nowi int64) (int64, bool, error) {
 }
 
 func (j Job) String() string {
-
 	jobStr, _ := json.Marshal(j)
 	return string(jobStr)
 }

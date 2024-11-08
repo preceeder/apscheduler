@@ -12,11 +12,11 @@ import (
 	"github.com/preceeder/apscheduler"
 	"github.com/preceeder/apscheduler/events"
 	"github.com/preceeder/apscheduler/job"
+	"github.com/preceeder/apscheduler/lock"
 	"github.com/preceeder/apscheduler/stores"
 	"github.com/preceeder/apscheduler/triggers"
 	"github.com/redis/go-redis/v9"
 	"testing"
-	"time"
 )
 
 type RedisConfig struct {
@@ -44,9 +44,9 @@ func TestRunDistributed(t *testing.T) {
 	}
 	rdb = getRedis(rc)
 
-	go Distributed01()
-	time.Sleep(time.Second * 1)
-	go Distributed02()
+	Distributed01()
+	//time.Sleep(time.Second * 1)
+	//go Distributed02()
 
 	select {}
 }
@@ -82,7 +82,8 @@ func Distributed01() {
 	_ = scheduler.SetStore("default", &def)
 
 	// 设置  启用分布式锁
-	scheduler.SetDistributed(rdb, "")
+	lc, _ := lock.NewRedisLock(rdb, "")
+	scheduler.SetDistributed(lc)
 
 	//startTime := time.Now().Format(time.DateTime)
 	job1 := job.Job{
@@ -118,7 +119,8 @@ func Distributed02() {
 	_ = scheduler.SetStore("default", &def)
 
 	// 设置  启用分布式锁
-	scheduler.SetDistributed(rdb, "")
+	lc, _ := lock.NewRedisLock(rdb, "")
+	scheduler.SetDistributed(lc)
 
 	job1 := job.Job{
 		Name:     "job013333",

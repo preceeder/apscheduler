@@ -2,11 +2,10 @@ package stores
 
 // 还没有测试, 有问题, 等需要用到的时候在测试
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
+	"github.com/preceeder/apscheduler/serialize"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -180,23 +179,10 @@ func (s *MongoDBStore) Clear() error {
 }
 
 func (s *MongoDBStore) StateDump(j job.Job) ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(j)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	return serialize.DefaultSerialize.StateDump(j)
 }
 
 // Deserialize Bytes and convert to Job
 func (s *MongoDBStore) StateLoad(state []byte) (job.Job, error) {
-	var j job.Job
-	buf := bytes.NewBuffer(state)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(&j)
-	if err != nil {
-		return job.Job{}, err
-	}
-	return j, nil
+	return serialize.DefaultSerialize.StateLoad(state)
 }

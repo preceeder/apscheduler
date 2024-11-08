@@ -1,11 +1,10 @@
 package stores
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"github.com/preceeder/apscheduler/apsError"
 	"github.com/preceeder/apscheduler/job"
+	"github.com/preceeder/apscheduler/serialize"
 	"github.com/redis/go-redis/v9"
 	"strconv"
 )
@@ -199,7 +198,7 @@ func (s *RedisStore) DeleteAllJobs() error {
 }
 
 func (s *RedisStore) GetNextRunTime() (int64, error) {
-	sliceRunTimes, err := s.RDB.ZRangeWithScores(ctx, s.RunTimesKey, 0, 0).Result()
+	sliceRunTimes, err := s.RDB.ZRangeWithScores(ctx, s.RunTimesKey, 0, -1).Result()
 	if err != nil || len(sliceRunTimes) == 0 {
 		return 0, nil
 	}
@@ -213,26 +212,10 @@ func (s *RedisStore) Clear() error {
 }
 
 func (s *RedisStore) StateDump(j job.Job) ([]byte, error) {
-
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	err := enc.Encode(j)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
+	return serialize.DefaultSerialize.StateDump(j)
 }
 
 // Deserialize Bytes and convert to Job
 func (s *RedisStore) StateLoad(state []byte) (job.Job, error) {
-	var j job.Job
-	buf := bytes.NewBuffer(state)
-	dec := gob.NewDecoder(buf)
-	err := dec.Decode(&j)
-	if err != nil {
-		return job.Job{}, err
-	}
-
-	return j, nil
+	return serialize.DefaultSerialize.StateLoad(state)
 }

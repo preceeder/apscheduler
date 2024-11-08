@@ -29,6 +29,7 @@ func (dt *DateTrigger) GetLocation() (err error) {
 	}
 	return nil
 }
+
 func (dt *DateTrigger) Init() error {
 	err := dt.GetLocation()
 	if err != nil {
