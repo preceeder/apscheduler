@@ -25,6 +25,17 @@ type IntervalTrigger struct {
 	isInit  bool
 }
 
+// 转换成map
+func (ct *IntervalTrigger) ToMap() map[string]any {
+	return map[string]any{
+		"start_time":    ct.StartTime,
+		"end_time":      ct.EndTime,
+		"interval":      ct.Interval,
+		"utc_time_zone": ct.TimeZoneName,
+		"Jitter":        ct.Jitter,
+	}
+}
+
 // GetLocation 获取时区
 func (it *IntervalTrigger) GetLocation() (err error) {
 	if it.TimeZoneName == "" {

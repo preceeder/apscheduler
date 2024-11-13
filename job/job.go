@@ -50,6 +50,21 @@ type Job struct {
 	HashValue   string `json:"has_value"`    // 保存job本身 除NextRunTime 以外的 数据的has
 }
 
+// 转成map 用于创建任务时，请求传输map
+func (js Job) ToMap() map[string]any {
+	return map[string]any{
+		"id":           js.Id,
+		"name":         js.Name,
+		"trigger":      js.Trigger.ToMap(),
+		"func_name":    js.FuncName,
+		"args":         js.Args,
+		"timeout":      js.Timeout,
+		"store_name":   js.StoreName,
+		"replace":      js.Replace,
+		"max_instance": js.MaxInstance,
+	}
+}
+
 // `sort.Interface`, sorted by 'NextRunTime', ascend.
 type JobSlice []Job
 

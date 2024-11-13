@@ -17,6 +17,15 @@ type DateTrigger struct {
 	isInit       bool
 }
 
+// 转换成map
+func (ct *DateTrigger) ToMap() map[string]any {
+	return map[string]any{
+		"run_date":      ct.RunDate,
+		"utc_time_zone": ct.TimeZoneName,
+		"Jitter":        ct.Jitter,
+	}
+}
+
 // GetLocation 获取时区
 func (dt *DateTrigger) GetLocation() (err error) {
 	if dt.TimeZoneName == "" {

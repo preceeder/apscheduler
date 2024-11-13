@@ -27,6 +27,7 @@ type Trigger interface {
 	GetLocation() error
 	GetJitterTime() int64
 	GetNextRunTime(previousFireTime, now int64) (int64, error)
+	ToMap() map[string]any
 }
 
 func init() {

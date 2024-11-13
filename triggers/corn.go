@@ -51,10 +51,10 @@ import (
 // Hash ( # )
 // # is allowed for the day-of-week field, and must be followed by a number between one and five. It allows you to specify constructs such as "the second Friday" of a given month.
 
-//If only six fields are present, a 0 second field is prepended, that is, * * * * * 2013 internally become 0 * * * * * 2013.
-//If only five fields are present, a 0 second field is prepended and a wildcard year field is appended, that is, * * * * Mon internally become 0 * * * * Mon *.
-//Domain for day-of-week field is [0-7] instead of [0-6], 7 being Sunday (like 0). This to comply with http://linux.die.net/man/5/crontab#.
-//As of now, the behavior of the code is undetermined if a malformed cron expression is supplied
+// If only six fields are present, a 0 second field is prepended, that is, * * * * * 2013 internally become 0 * * * * * 2013.
+// If only five fields are present, a 0 second field is prepended and a wildcard year field is appended, that is, * * * * Mon internally become 0 * * * * Mon *.
+// Domain for day-of-week field is [0-7] instead of [0-6], 7 being Sunday (like 0). This to comply with http://linux.die.net/man/5/crontab#.
+// As of now, the behavior of the code is undetermined if a malformed cron expression is supplied
 type CronTrigger struct {
 	CronExpr     string `json:"cron_expr"`
 	TimeZoneName string `json:"utc_time_zone"` // 默认就是 UTC
@@ -67,6 +67,17 @@ type CronTrigger struct {
 	endTime    int64
 	timeZone   *time.Location
 	isInit     bool
+}
+
+// 转换成map
+func (ct *CronTrigger) ToMap() map[string]any {
+	return map[string]any{
+		"cron_expr":     ct.CronExpr,
+		"utc_time_zone": ct.TimeZoneName,
+		"start_time":    ct.startTime,
+		"end_time":      ct.endTime,
+		"Jitter":        ct.Jitter,
+	}
 }
 
 // GetLocation 获取时区
